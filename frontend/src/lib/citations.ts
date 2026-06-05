@@ -24,14 +24,6 @@ export type PipelineStatus = {
   message: string
 }
 
-export const PIPELINE_STEPS: { stage: PipelineStage; label: string }[] = [
-  { stage: 'analyzing', label: 'Analyzing' },
-  { stage: 'searching', label: 'Searching' },
-  { stage: 'reading', label: 'Reading' },
-  { stage: 'verifying', label: 'Verifying' },
-  { stage: 'streaming', label: 'Answering' },
-]
-
 function isCitationData(data: unknown): data is CitationPayload {
   if (typeof data !== 'object' || data === null) {
     return false

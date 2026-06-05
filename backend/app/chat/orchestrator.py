@@ -18,7 +18,7 @@ from app.chat.streaming import (
     stream_error,
     stream_status,
 )
-from app.grounding.validator import GroundingValidator
+from app.grounding.validator import GroundingValidator, prune_unreferenced_citations
 from app.retrieval.retriever import DocumentRetriever
 from app.schemas.chat import UIMessage
 
@@ -90,6 +90,7 @@ async def run_turn(
     async for event in stream_status("verifying", "Verifying citations…"):
         yield event
 
+    grounded = prune_unreferenced_citations(grounded)
     validation = GroundingValidator().validate(grounded, registry)
 
     if validation.ok:

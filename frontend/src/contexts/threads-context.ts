@@ -8,6 +8,7 @@ export type ThreadsContextValue = {
   error: string | null
   refreshThreads: () => Promise<void>
   createNewThread: () => Promise<string>
+  deleteThread: (threadId: string) => Promise<void>
 }
 
 export const ThreadsContext = createContext<ThreadsContextValue | null>(null)

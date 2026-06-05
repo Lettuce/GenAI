@@ -15,6 +15,11 @@ from app.database.chats import append_grounded_turn
 from app.grounding.validator import ValidationResult
 from app.schemas.chat import CitationPart, StatusPart, StatusPayload, UIMessage
 
+GROUNDING_FAILURE_MESSAGE = (
+    "I found relevant source passages, but I could not fully verify the answer "
+    "against them. Try asking a narrower question or breaking it into smaller parts."
+)
+
 
 def _sse_event(payload: dict[str, object]) -> str:
     return f"data: {json.dumps(payload, separators=(',', ':'), default=str)}\n\n"
@@ -80,7 +85,7 @@ async def stream_grounded_turn_and_persist(
     validation: ValidationResult,
 ) -> AsyncIterator[str]:
     if not validation.ok:
-        async for event in stream_error(validation.error or "Grounding validation failed."):
+        async for event in stream_error(GROUNDING_FAILURE_MESSAGE):
             yield event
         return
 

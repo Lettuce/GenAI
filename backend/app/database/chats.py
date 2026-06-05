@@ -92,6 +92,10 @@ async def create_thread(
     return thread_row_to_response(response.data[0])
 
 
+async def delete_thread(client: AsyncClient, thread_id: uuid.UUID) -> None:
+    await client.table("chat_threads").delete().eq("id", str(thread_id)).execute()
+
+
 def _citation_rows_from_message(
     assistant_message: UIMessage,
 ) -> list[dict[str, Any]]:

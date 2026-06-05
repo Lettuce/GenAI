@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 type CitationMarkerProps = {
@@ -9,17 +8,18 @@ type CitationMarkerProps = {
 
 export function CitationMarker({ index, selected, onSelect }: CitationMarkerProps) {
   return (
-    <Button
+    <button
       type="button"
-      variant="link"
-      size="xs"
-      className={cn(
-        'h-auto min-w-0 px-0.5 align-super text-xs font-semibold',
-        selected ? 'text-primary' : 'text-primary/80',
-      )}
       onClick={() => onSelect(index)}
+      aria-label={`Show source ${index}`}
+      className={cn(
+        'mx-0.5 inline-flex h-4 min-w-4 -translate-y-1 items-center justify-center rounded px-1 align-baseline text-[0.65rem] font-semibold tabular-nums no-underline transition-colors',
+        selected
+          ? 'bg-primary text-primary-foreground'
+          : 'bg-muted text-muted-foreground hover:bg-foreground hover:text-background',
+      )}
     >
-      [{index}]
-    </Button>
+      {index}
+    </button>
   )
 }

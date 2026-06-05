@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.retrieval.keywords import FtsKeywordExtraction, extract_fts_keywords
 from app.retrieval.types import SearchFilters
 

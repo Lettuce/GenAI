@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/button'
 import { citationLabel, type CitationPayload } from '@/lib/citations'
 import { cn } from '@/lib/utils'
 
@@ -10,18 +9,20 @@ type CitationChipProps = {
 
 export function CitationChip({ citation, selected, onSelect }: CitationChipProps) {
   return (
-    <Button
+    <button
       type="button"
-      variant="outline"
-      size="xs"
-      className={cn(
-        'h-auto max-w-full py-1 text-left font-normal',
-        selected && 'border-primary bg-primary/5 text-foreground',
-      )}
       onClick={() => onSelect(citation)}
+      className={cn(
+        'inline-flex max-w-full items-center gap-1.5 rounded-full border py-1 pr-3 pl-1 text-left text-xs transition-colors',
+        selected
+          ? 'border-foreground bg-foreground/5 text-foreground'
+          : 'border-border bg-background text-muted-foreground hover:border-foreground/40 hover:text-foreground',
+      )}
     >
-      <span className="mr-1 font-medium text-primary">[{citation.citationIndex}]</span>
-      <span className="truncate">{citationLabel(citation)}</span>
-    </Button>
+      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-foreground text-[0.6rem] font-semibold text-background tabular-nums">
+        {citation.citationIndex}
+      </span>
+      <span className="truncate font-medium">{citationLabel(citation)}</span>
+    </button>
   )
 }

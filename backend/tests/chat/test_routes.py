@@ -7,7 +7,13 @@ from fastapi.testclient import TestClient
 
 from app.auth.dependencies import CurrentUser, get_access_token, get_current_user
 from app.main import app
-from app.schemas.chat import CitationPart, StreamRequest, ThreadResponse
+from app.schemas.chat import (
+    CitationContextChunk,
+    CitationContextResponse,
+    CitationPart,
+    StreamRequest,
+    ThreadResponse,
+)
 
 TEST_USER = CurrentUser(id=uuid.uuid4(), email="analyst@example.com")
 OTHER_USER = CurrentUser(id=uuid.uuid4(), email="other@example.com")
@@ -90,6 +96,43 @@ def test_post_thread_rejects_missing_body(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_delete_thread_removes_owned_thread(client: TestClient) -> None:
+    from app.database.chats import ThreadRow
+
+    thread = ThreadRow(id=THREAD_ID, user_id=TEST_USER.id, title="Old chat")
+
+    with (
+        patch("app.api.chat.require_thread_access", AsyncMock(return_value=thread)),
+        patch("app.api.chat.create_user_client", AsyncMock(return_value=MagicMock())),
+        patch("app.api.chat.delete_thread", AsyncMock(), create=True) as mock_delete,
+    ):
+        response = client.delete(
+            f"/chat/threads/{THREAD_ID}",
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 204
+    assert response.content == b""
+    mock_delete.assert_awaited_once()
+
+
+def test_delete_thread_returns_403_for_foreign_thread(client: TestClient) -> None:
+    from fastapi import HTTPException
+
+    with patch(
+        "app.api.chat.require_thread_access",
+        AsyncMock(
+            side_effect=HTTPException(status_code=403, detail="Forbidden"),
+        ),
+    ):
+        response = client.delete(
+            f"/chat/threads/{THREAD_ID}",
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 403
+
+
 def test_get_messages_returns_403_for_foreign_thread(client: TestClient) -> None:
     from fastapi import HTTPException
 
@@ -105,6 +148,76 @@ def test_get_messages_returns_403_for_foreign_thread(client: TestClient) -> None
         )
 
     assert response.status_code == 403
+
+
+def test_get_citation_context_returns_neighbor_chunks(client: TestClient) -> None:
+    chunk_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    context = CitationContextResponse(
+        anchor_chunk_id=chunk_id,
+        document_id=document_id,
+        ticker="AAPL",
+        company_name="Apple Inc.",
+        form="10-K",
+        filing_date="2024-11-01",
+        source_url="https://example.com/aapl-10k",
+        chunks=[
+            CitationContextChunk(
+                chunk_id=uuid.uuid4(),
+                chunk_index=36,
+                role="previous",
+                text="Prior context",
+                page="7",
+                section="Products",
+            ),
+            CitationContextChunk(
+                chunk_id=chunk_id,
+                chunk_index=37,
+                role="anchor",
+                text="| Segment | 2024 |\n| --- | --- |\n| Services | 96,169 |",
+                page="8",
+                section="Products",
+            ),
+            CitationContextChunk(
+                chunk_id=uuid.uuid4(),
+                chunk_index=38,
+                role="next",
+                text="Following context",
+                page="8",
+                section="Products",
+            ),
+        ],
+    )
+
+    with patch("app.api.chat.load_citation_context", return_value=context) as mock_load:
+        response = client.get(
+            f"/chat/citations/{chunk_id}/context?radius=2",
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["anchorChunkId"] == str(chunk_id)
+    assert body["documentId"] == str(document_id)
+    assert body["companyName"] == "Apple Inc."
+    assert [chunk["role"] for chunk in body["chunks"]] == ["previous", "anchor", "next"]
+    assert body["chunks"][1]["chunkIndex"] == 37
+    assert body["chunks"][1]["text"].startswith("| Segment |")
+    mock_load.assert_called_once_with(chunk_id, 2)
+
+
+def test_get_citation_context_returns_404_when_chunk_is_missing(
+    client: TestClient,
+) -> None:
+    chunk_id = uuid.uuid4()
+
+    with patch("app.api.chat.load_citation_context", return_value=None):
+        response = client.get(
+            f"/chat/citations/{chunk_id}/context",
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert response.status_code == 404
 
 
 def test_post_stream_returns_event_stream(client: TestClient) -> None:

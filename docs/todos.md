@@ -166,8 +166,8 @@ Goal: analysts can verify every claim in one click — this is what makes the pr
 
 Goal: 5 senior analysts can use it for a week and report ≥3 hours saved per analyst per week.
 
-- [ ] README "Running locally" section — copy-paste commands for backend + frontend + env vars
-- [ ] Seed or document how to ingest/update the corpus
+- [x] README "Running locally" section — copy-paste commands for backend + frontend + env vars
+- [x] Seed or document how to ingest/update the corpus
 - [ ] Smoke-test all 10 example questions from the client brief
 - [ ] Confirm chat history persists across sessions
 - [ ] Confirm ~40-user scale assumptions (no hardcoded single-user shortcuts)

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 
+import { Logo } from '@/components/Logo'
 import {
   Card,
   CardContent,
@@ -16,10 +17,11 @@ type AuthLayoutProps = {
 
 export function AuthLayout({ title, description, children }: AuthLayoutProps) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted/30 p-4">
+      <Logo />
+      <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle className="text-xl">{title}</CardTitle>
           {description ? <CardDescription>{description}</CardDescription> : null}
         </CardHeader>
         <CardContent>{children}</CardContent>

@@ -52,11 +52,20 @@ export function classifyChatError(error: Error): ClassifiedChatError {
 
   const text = error.message || ''
 
-  if (messageIncludesAny(text, ['grounding', 'citation', 'verified against source'])) {
+  if (
+    messageIncludesAny(text, [
+      'grounding',
+      'citation',
+      'verified against source',
+      'source passages',
+      'fully verify',
+    ])
+  ) {
     return {
       kind: 'grounding',
       title: 'Answer not verified',
       message:
+        text ||
         'The answer could not be verified against source documents. Try rephrasing your question.',
       showLoginLink: false,
     }

@@ -29,3 +29,5 @@ Return a structured `GroundedAnswer`:
 - `answer`: your response with `[1]`, `[2]`, etc. inline
 - `citations`: list of `{citation_index, chunk_id, excerpt}` for each cited claim
 - `insufficient_evidence`: true only when you cannot answer from retrieved passages
+
+Only include citation entries that are referenced in the answer text. Each `excerpt` must be copied exactly from one retrieved chunk; do not rewrite, merge, or clean up table text before placing it in the excerpt field.

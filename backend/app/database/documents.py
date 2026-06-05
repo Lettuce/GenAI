@@ -67,3 +67,32 @@ def get_surrounding_chunks(
             .order_by(DocumentChunk.chunk_index)
         ).all()
     )
+
+
+def get_chunk_context(
+    session: Session,
+    chunk_id: UUID,
+    radius: int,
+) -> list[DocumentChunk] | None:
+    anchor = session.scalar(
+        select(DocumentChunk)
+        .options(joinedload(DocumentChunk.document))
+        .where(DocumentChunk.id == chunk_id)
+    )
+    if anchor is None:
+        return None
+
+    min_index = anchor.chunk_index - radius
+    max_index = anchor.chunk_index + radius
+    return list(
+        session.scalars(
+            select(DocumentChunk)
+            .options(joinedload(DocumentChunk.document))
+            .where(
+                DocumentChunk.document_id == anchor.document_id,
+                DocumentChunk.chunk_index >= min_index,
+                DocumentChunk.chunk_index <= max_index,
+            )
+            .order_by(DocumentChunk.chunk_index)
+        ).all()
+    )

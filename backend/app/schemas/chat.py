@@ -34,6 +34,30 @@ class CitationPart(BaseModel):
     data: CitationPayload
 
 
+class CitationContextChunk(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    chunk_id: uuid.UUID = Field(alias="chunkId")
+    chunk_index: int = Field(alias="chunkIndex")
+    role: Literal["previous", "anchor", "next"]
+    text: str
+    page: str | None = None
+    section: str | None = None
+
+
+class CitationContextResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    anchor_chunk_id: uuid.UUID = Field(alias="anchorChunkId")
+    document_id: uuid.UUID = Field(alias="documentId")
+    ticker: str
+    company_name: str | None = Field(default=None, alias="companyName")
+    form: str
+    filing_date: date = Field(alias="filingDate")
+    source_url: str = Field(alias="sourceUrl")
+    chunks: list[CitationContextChunk]
+
+
 class StatusPayload(BaseModel):
     stage: str
     message: str

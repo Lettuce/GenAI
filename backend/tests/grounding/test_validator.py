@@ -3,7 +3,7 @@ from datetime import date
 
 from app.assistant.deps import TurnRegistry
 from app.assistant.outputs import Citation, GroundedAnswer
-from app.grounding.validator import GroundingValidator
+from app.grounding.validator import GroundingValidator, prune_unreferenced_citations
 from app.retrieval.types import RetrievedPassage
 
 
@@ -128,3 +128,31 @@ def test_empty_citations_on_normal_answer_fails() -> None:
     answer = GroundedAnswer(answer="No citations here.")
     result = GroundingValidator().validate(answer, registry)
     assert not result.ok
+
+
+def test_prune_unreferenced_citations_removes_extra_metadata() -> None:
+    passage = _passage()
+    extra_passage = _passage("Mac revenue declined.")
+    registry = TurnRegistry()
+    registry.register(passage)
+    registry.register(extra_passage)
+    answer = GroundedAnswer(
+        answer="Services revenue grew [1].",
+        citations=[
+            Citation(
+                citation_index=1,
+                chunk_id=passage.chunk_id,
+                excerpt="Services revenue grew 12% year over year.",
+            ),
+            Citation(
+                citation_index=2,
+                chunk_id=extra_passage.chunk_id,
+                excerpt="Mac revenue declined.",
+            ),
+        ],
+    )
+
+    pruned = prune_unreferenced_citations(answer)
+
+    assert [citation.citation_index for citation in pruned.citations] == [1]
+    assert GroundingValidator().validate(pruned, registry).ok

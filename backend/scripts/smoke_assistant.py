@@ -17,7 +17,7 @@ from app.assistant.progress import (
     reset_progress_clock,
 )
 from app.config import settings
-from app.grounding.validator import GroundingValidator
+from app.grounding.validator import GroundingValidator, prune_unreferenced_citations
 from app.retrieval.retriever import DocumentRetriever
 
 nest_asyncio.apply()
@@ -57,7 +57,7 @@ def main() -> None:
     print(f"Model: {settings.openai_chat_model}", flush=True)
     print(f"Query ({QUERY_KEY}): {query}\n", flush=True)
 
-    answer = run_document_agent(query, deps)
+    answer = prune_unreferenced_citations(run_document_agent(query, deps))
     validation = GroundingValidator().validate(answer, registry)
 
     report_progress(

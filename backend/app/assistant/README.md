@@ -6,6 +6,8 @@ Retrieval-specific settings and SQL details live in [`../retrieval/README.md`](.
 
 ## Full pipeline
 
+The turn starts in `agent.py`, where `run_document_agent` sends the analyst's question to the PydanticAI agent with the product contract from `instructions.md` and the four retrieval tools from `tools.py`. The instructions tell the model to call `search_filings` first; that tool delegates to `../retrieval/retriever.py`, which embeds the query, extracts full-text keywords, runs semantic and Postgres full-text search in parallel, fuses the rankings, hydrates the winning chunks, and includes nearby neighbor chunks by default. The agent then decides whether the returned excerpts are enough to answer: if they are, it can produce the final `GroundedAnswer`; if not, it can call `read_chunks`/`read_chunk` for full chunk text, or `read_surrounding_chunks` only when it needs more adjacent context than the search result neighbors already provided. Every tool response is registered in `TurnRegistry` from `deps.py`, so the final citations are limited to chunks actually retrieved during that turn. After the agent returns, `../grounding/validator.py` compares the structured answer against that registry: it checks the answer/citation contract, verifies every `[n]` marker has a matching citation, rejects chunk IDs that were never retrieved, and requires each excerpt to be copied verbatim from the registered chunk text before the chat layer is allowed to stream or persist the answer.
+
 ```mermaid
 flowchart TD
     Q[Analyst question] --> AGENT[PydanticAI document agent]

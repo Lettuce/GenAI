@@ -124,3 +124,27 @@ async def test_stream_grounded_turn_skips_persist_on_validation_failure() -> Non
 
     assert any('"type":"error"' in event for event in events)
     mock_append.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_stream_grounded_turn_explains_validation_failure_to_user() -> None:
+    answer, registry = _grounded_answer()
+    user_message = UIMessage(role="user", parts=[TextPart(text="Hello")])
+
+    events = [
+        event
+        async for event in stream_grounded_turn_and_persist(
+            client=MagicMock(),
+            thread_id=uuid.uuid4(),
+            user_message=user_message,
+            thread_title="New chat",
+            answer=answer,
+            registry=registry,
+            validation=ValidationResult(ok=False, error="bad citations"),
+        )
+    ]
+
+    payload = "".join(events)
+    assert "found relevant source passages" in payload
+    assert "could not fully verify" in payload
+    assert "bad citations" not in payload

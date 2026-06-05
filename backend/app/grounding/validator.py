@@ -21,6 +21,26 @@ def _normalize_text(text: str) -> str:
     return " ".join(text.split())
 
 
+def _citation_markers(text: str) -> set[int]:
+    return {int(match.group(1)) for match in _CITATION_MARKER_RE.finditer(text)}
+
+
+def prune_unreferenced_citations(answer: GroundedAnswer) -> GroundedAnswer:
+    marker_indices = _citation_markers(answer.answer)
+    if not marker_indices:
+        return answer
+
+    citations = [
+        citation
+        for citation in answer.citations
+        if citation.citation_index in marker_indices
+    ]
+    if len(citations) == len(answer.citations):
+        return answer
+
+    return answer.model_copy(update={"citations": citations})
+
+
 class GroundingValidator:
     def validate(self, answer: GroundedAnswer, registry: TurnRegistry) -> ValidationResult:
         if not answer.answer.strip():
@@ -57,9 +77,7 @@ class GroundingValidator:
                 error="citation_index values must be unique, 1-based, and contiguous.",
             )
 
-        marker_indices = {
-            int(match.group(1)) for match in _CITATION_MARKER_RE.finditer(answer.answer)
-        }
+        marker_indices = _citation_markers(answer.answer)
         if marker_indices != set(indices):
             return ValidationResult(
                 ok=False,

@@ -8,7 +8,7 @@ import {
 
 import { ThreadsContext } from '@/contexts/threads-context'
 import { ApiError } from '@/lib/http'
-import { createThread, listThreads } from '@/lib/chat'
+import { createThread, deleteThread as deleteThreadRequest, listThreads } from '@/lib/chat'
 
 export function ThreadsProvider({ children }: { children: ReactNode }) {
   const [threads, setThreads] = useState<Awaited<ReturnType<typeof listThreads>>>([])
@@ -53,6 +53,11 @@ export function ThreadsProvider({ children }: { children: ReactNode }) {
     return thread.id
   }, [refreshThreads])
 
+  const deleteThread = useCallback(async (threadId: string) => {
+    await deleteThreadRequest(threadId)
+    setThreads((current) => current.filter((thread) => thread.id !== threadId))
+  }, [])
+
   const value = useMemo(
     () => ({
       threads,
@@ -60,8 +65,9 @@ export function ThreadsProvider({ children }: { children: ReactNode }) {
       error,
       refreshThreads,
       createNewThread,
+      deleteThread,
     }),
-    [threads, isLoading, error, refreshThreads, createNewThread],
+    [threads, isLoading, error, refreshThreads, createNewThread, deleteThread],
   )
 
   return <ThreadsContext.Provider value={value}>{children}</ThreadsContext.Provider>
