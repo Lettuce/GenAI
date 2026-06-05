@@ -1,8 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 
+import { ChatLayout } from '@/components/chat/ChatLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import { PublicRoute } from '@/components/PublicRoute'
-import { Home } from '@/pages/Home'
+import { ChatEmptyPage } from '@/pages/chat/ChatEmptyPage'
+import { ChatThreadPage } from '@/pages/chat/ChatThreadPage'
 import { Login } from '@/pages/Login'
 import { SignUp } from '@/pages/SignUp'
 
@@ -26,15 +28,19 @@ function App() {
             </PublicRoute>
           }
         />
+        <Route path="/" element={<Navigate to="/chats" replace />} />
         <Route
-          path="/"
+          path="/chats"
           element={
             <ProtectedRoute>
-              <Home />
+              <ChatLayout />
             </ProtectedRoute>
           }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        >
+          <Route index element={<ChatEmptyPage />} />
+          <Route path=":threadId" element={<ChatThreadPage />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/chats" replace />} />
       </Routes>
     </BrowserRouter>
   )

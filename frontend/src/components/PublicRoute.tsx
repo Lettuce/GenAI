@@ -19,7 +19,7 @@ export function PublicRoute({ children }: PublicRouteProps) {
   }
 
   if (session) {
-    return <Navigate to="/" replace />
+    return <Navigate to="/chats" replace />
   }
 
   return children

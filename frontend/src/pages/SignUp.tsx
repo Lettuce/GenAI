@@ -46,7 +46,7 @@ export function SignUp() {
     }
 
     if (data.session) {
-      navigate('/', { replace: true })
+      navigate('/chats', { replace: true })
       return
     }
 
