@@ -10,12 +10,12 @@ Work top-to-bottom. Each phase ends with something you can run or verify before 
 
 ## Phase 0 — Prerequisites & corpus
 
-- [ ] Install toolchain: Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 20+, [pnpm](https://pnpm.io/)
-- [ ] Create Supabase project ([guide](guides/supabase-setup.md)) — save URL, anon key, service role key, direct DB connection string
-- [ ] Create OpenAI API key (needed from Phase 3 onward)
-- [ ] Edit `USER_AGENT` in `data/download.py` with your real email (SEC requirement)
-- [ ] Run `uv run data/download.py` — confirm 25 10-K filings (5 tickers × 5 years) land in `data/downloads/` with `manifest.json`
-- [ ] Copy env templates: `backend/.env.example` → `backend/.env`, `frontend/.env.example` → `frontend/.env`
+- [X] Install toolchain: Python 3.12+, [uv](https://docs.astral.sh/uv/), Node 20+, [pnpm](https://pnpm.io/)
+- [X] Create Supabase project ([guide](guides/supabase-setup.md)) — save URL, anon key, service role key, direct DB connection string
+- [X] Create OpenAI API key (needed from Phase 3 onward)
+- [X] Edit `USER_AGENT` in `data/download.py` with your real email (SEC requirement)
+- [X] Run `uv run data/download.py` — confirm 25 10-K filings (5 tickers × 5 years) land in `data/downloads/` with `manifest.json`
+- [X] Copy env templates: `backend/.env.example` → `backend/.env`, `frontend/.env.example` → `frontend/.env`
 
 ---
 
