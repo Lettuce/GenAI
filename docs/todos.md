@@ -23,7 +23,7 @@ Work top-to-bottom. Each phase ends with something you can run or verify before 
 
 Goal: FastAPI boots, Alembic owns schema, empty tables exist in Supabase.
 
-- [ ] Init backend deps ([guide](guides/backend-setup.md)):
+- [X] Init backend deps ([guide](guides/backend-setup.md)):
   ```bash
   cd backend && uv sync
   uv add fastapi uvicorn pydantic pydantic-settings httpx structlog openai supabase pydantic-ai sqlalchemy alembic "psycopg[binary]" pgvector
