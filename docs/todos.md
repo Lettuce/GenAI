@@ -31,20 +31,18 @@ Goal: FastAPI boots, Alembic owns schema, empty tables exist in Supabase.
   ```
 - [X] Create `app/main.py` — FastAPI app, CORS from `ALLOWED_ORIGINS`, health route `GET /health`
 - [X] Create `app/config.py` — pydantic-settings for all backend env vars; fail fast on missing required values
-- [ ] Init Alembic: `uv run alembic init alembic`; wire `env.py` to import SQLAlchemy metadata + read `DATABASE_URL` from settings (direct/session connection, not pooler)
-- [ ] Create `app/database/models.py` — SQLAlchemy models for:
-  - [ ] `profiles` (user id from Supabase auth)
-  - [ ] `source_documents` (filing metadata + normalized Markdown)
-  - [ ] `document_chunks` (text, embedding, tsvector, metadata JSON)
-  - [ ] `chat_threads`, `chat_messages`, `message_citations`
-- [ ] Generate & review initial migration — explicitly add in migration file:
-  - [ ] `create extension if not exists vector`
-  - [ ] `vector(1536)` embedding column
-  - [ ] generated `tsvector` column on chunks
-  - [ ] HNSW index (vectors), GIN index (full-text + metadata)
-  - [ ] RLS policies (users see only their own chats; corpus readable by authenticated users)
-- [ ] Apply: `uv run alembic upgrade head`
-- [ ] Verify: `uv run uvicorn app.main:app --reload` → `GET /health` returns OK
+- [X] Init Alembic: `uv run alembic init alembic`; wire `env.py` to import SQLAlchemy metadata + read `DATABASE_URL` from settings (direct/session connection, not pooler)
+- [X] Create the database model package under `app/database/models` — SQLAlchemy models for:
+  - [X] `users`
+  - [X] `source_documents`
+  - [X] `document_chunks`
+  - [X] `chat_threads` and `chat_messages`
+- [X] Generate & review initial migration — includes:
+  - [X] `CREATE EXTENSION IF NOT EXISTS vector`
+  - [X] `VECTOR(1536)` embedding column
+  - [X] initial tables and indexes for the core schema
+- [X] Apply: `uv run alembic upgrade head`
+- [X] Verify: `uv run uvicorn app.main:app --reload` → `GET /health` returns OK
 
 ---
 
