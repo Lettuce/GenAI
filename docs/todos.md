@@ -29,8 +29,8 @@ Goal: FastAPI boots, Alembic owns schema, empty tables exist in Supabase.
   uv add fastapi uvicorn pydantic pydantic-settings httpx structlog openai supabase pydantic-ai sqlalchemy alembic "psycopg[binary]" pgvector
   uv add --dev pytest ruff
   ```
-- [ ] Create `app/main.py` — FastAPI app, CORS from `ALLOWED_ORIGINS`, health route `GET /health`
-- [ ] Create `app/config.py` — pydantic-settings for all backend env vars; fail fast on missing required values
+- [X] Create `app/main.py` — FastAPI app, CORS from `ALLOWED_ORIGINS`, health route `GET /health`
+- [X] Create `app/config.py` — pydantic-settings for all backend env vars; fail fast on missing required values
 - [ ] Init Alembic: `uv run alembic init alembic`; wire `env.py` to import SQLAlchemy metadata + read `DATABASE_URL` from settings (direct/session connection, not pooler)
 - [ ] Create `app/database/models.py` — SQLAlchemy models for:
   - [ ] `profiles` (user id from Supabase auth)
