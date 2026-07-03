@@ -1,23 +1,53 @@
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { AuthForm } from './components/AuthForm'
+import { signOut } from './lib/api'
+import { supabase } from './lib/supabase'
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      setSession(nextSession)
+      setLoading(false)
+    })
+
+    void supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setLoading(false)
+    })
+
+    return () => listener.subscription.unsubscribe()
+  }, [])
+
+  if (loading) {
+    return <div className="flex min-h-screen items-center justify-center">Loading…</div>
+  }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 px-6 py-10 dark:bg-slate-950 dark:text-slate-100">
-      <div className="mx-auto flex min-h-[calc(100vh-80px)] max-w-4xl flex-col justify-center gap-8">
-        <section className="rounded-3xl border border-slate-200 bg-white/90 p-8 shadow-xl shadow-slate-900/5 backdrop-blur dark:border-slate-700 dark:bg-slate-900/80">
-          <h1 className="text-4xl font-semibold tracking-tight">Get started</h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 dark:text-slate-300">
-            Edit <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100">src/App.tsx</code> and save to test HMR.
-          </p>
-          <div className="mt-6">
-            <Button onClick={() => setCount((count) => count + 1)}>
-              Count is {count}
-            </Button>
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-10">
+      <div className="w-full max-w-md space-y-6">
+        <div className="text-center">
+          <h1 className="text-3xl font-semibold tracking-tight">Document Copilot</h1>
+          <p className="mt-2 text-sm text-slate-600">Sign in or create an account to continue.</p>
+        </div>
+
+        {session ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm text-slate-600">You are signed in.</p>
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="mt-4 rounded bg-slate-900 px-3 py-2 text-sm text-white"
+            >
+              Sign out
+            </button>
           </div>
-        </section>
+        ) : (
+          <AuthForm onSuccess={() => {}} />
+        )}
       </div>
     </main>
   )

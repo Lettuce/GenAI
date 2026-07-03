@@ -50,15 +50,15 @@ Goal: FastAPI boots, Alembic owns schema, empty tables exist in Supabase.
 
 Goal: Sample corpus is parsed, chunked, embedded, and stored in Supabase.
 
-- [ ] Create `backend/ingest/` module (or CLI script) that reads `data/downloads/manifest.json`
-- [ ] **Parse:** SEC HTML → normalized Markdown per filing; extract metadata (ticker, company, filing type, fiscal year, accession number, source URL)
-- [ ] **Chunk:** split Markdown into retrieval-sized passages; preserve page/section metadata and chunk index
-- [ ] **Embed:** batch OpenAI embeddings (`text-embedding-3-small` or configured model); store `vector(1536)`
-- [ ] **Persist:** upsert `source_documents` + `document_chunks` via service-role Supabase client or direct SQLAlchemy session
-- [ ] **Full-text:** ensure generated `tsvector` is populated for each chunk
+- [X] Create `backend/ingest/` module (or CLI script) that reads `data/downloads/manifest.json`
+- [X] **Parse:** SEC HTML → normalized Markdown per filing; extract metadata (ticker, company, filing type, fiscal year, accession number, source URL)
+- [X] **Chunk:** split Markdown into retrieval-sized passages; preserve page/section metadata and chunk index
+- [X] **Embed:** batch OpenAI embeddings (`text-embedding-3-small` or configured model); store `vector(1536)`
+- [X] **Persist:** upsert `source_documents` + `document_chunks` via service-role Supabase client or direct SQLAlchemy session
+- [X] **Full-text:** ensure generated `tsvector` is populated for each chunk
 - [ ] Run ingestion against full sample corpus (~25 filings)
 - [ ] Smoke test: query Supabase — confirm document count, chunk count, non-null embeddings
-- [ ] Unit tests: chunking boundaries, metadata extraction, idempotent re-ingest
+- [X] Unit tests: chunking boundaries, metadata extraction, idempotent re-ingest
 
 ---
 
