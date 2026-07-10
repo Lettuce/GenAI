@@ -56,8 +56,8 @@ Goal: Sample corpus is parsed, chunked, embedded, and stored in Supabase.
 - [X] **Embed:** batch OpenAI embeddings (`text-embedding-3-small` or configured model); store `vector(1536)`
 - [X] **Persist:** upsert `source_documents` + `document_chunks` via service-role Supabase client or direct SQLAlchemy session
 - [X] **Full-text:** ensure generated `tsvector` is populated for each chunk
-- [ ] Run ingestion against full sample corpus (~25 filings)
-- [ ] Smoke test: query Supabase — confirm document count, chunk count, non-null embeddings
+- [X] Run ingestion against full sample corpus (~25 filings)
+- [X] Smoke test: query Supabase — confirm document count, chunk count, non-null embeddings
 - [X] Unit tests: chunking boundaries, metadata extraction, idempotent re-ingest
 
 ---

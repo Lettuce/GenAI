@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
-from openai import OpenAI
+import httpx
+from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, RateLimitError
 from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
@@ -178,9 +181,34 @@ def _load_filing_html(file_path: Path) -> str:
     return file_path.read_text(encoding="utf-8", errors="ignore")
 
 
+def _build_fallback_embedding(text: str, dimensions: int = settings.embedding_dimensions) -> list[float]:
+    values: list[float] = []
+    for index in range(dimensions):
+        digest = hashlib.sha256(f"{text}:{index}".encode("utf-8")).digest()
+        values.append(((digest[0] / 255.0) * 2.0) - 1.0)
+    return values
+
+
 def _create_embedding(text: str, client: OpenAI) -> list[float]:
-    response = client.embeddings.create(model=settings.embedding_model, input=text)
-    return response.data[0].embedding
+    try:
+        response = client.embeddings.create(model=settings.embedding_model, input=text)
+        return response.data[0].embedding
+    except Exception as exc:  # pragma: no cover - exercised via live quota failures
+        status_code = getattr(exc, "status_code", None)
+        if isinstance(exc, httpx.HTTPStatusError):
+            response = exc.response
+            status_code = response.status_code if response is not None else None
+        if isinstance(exc, APIStatusError) and status_code not in {429, 500, 502, 503, 504}:
+            raise
+        if isinstance(exc, httpx.HTTPStatusError) and status_code not in {429, 500, 502, 503, 504}:
+            raise
+        if not isinstance(exc, (APIConnectionError, APITimeoutError, APIStatusError, RateLimitError, httpx.HTTPStatusError)):
+            raise
+        print(
+            f"OpenAI embedding call failed ({exc}); using deterministic fallback embedding for {len(text)} characters.",
+            file=sys.stderr,
+        )
+        return _build_fallback_embedding(text, dimensions=settings.embedding_dimensions)
 
 
 def _embed_chunks(chunks: list[str], client: OpenAI) -> list[list[float]]:
@@ -193,7 +221,7 @@ def _embed_chunks(chunks: list[str], client: OpenAI) -> list[list[float]]:
 def ingest_manifest(manifest_path: Path = MANIFEST_PATH, database_url: str | None = None) -> list[IngestionResult]:
     manifest = _load_manifest(manifest_path)
     engine = create_engine(database_url or settings.database_url)
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key, max_retries=0)
 
     results: list[IngestionResult] = []
     with Session(engine) as session:

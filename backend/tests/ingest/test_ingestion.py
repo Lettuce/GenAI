@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from ingest.pipeline import chunk_markdown, extract_filing_metadata, parse_html_to_markdown
+from unittest.mock import Mock
+
+from openai import RateLimitError
+from openai._base_client import make_request_options
+
+from ingest.pipeline import _create_embedding, chunk_markdown, extract_filing_metadata, parse_html_to_markdown
 
 
 def test_extract_filing_metadata_uses_manifest_fields() -> None:
@@ -39,3 +44,24 @@ def test_chunk_markdown_splits_large_content() -> None:
 
     assert len(chunks) >= 2
     assert all(chunk.strip() for chunk in chunks)
+
+
+def test_create_embedding_falls_back_when_openai_rate_limited() -> None:
+    client = Mock()
+    response = Mock()
+    response.status_code = 429
+    response.headers = {}
+    response.request = Mock()
+    response.request.method = "POST"
+    response.request.url = "https://api.openai.com/v1/embeddings"
+    response.text = "quota exceeded"
+    client.embeddings.create.side_effect = RateLimitError(
+        message="quota exceeded",
+        response=response,
+        body=None,
+    )
+
+    embedding = _create_embedding("fallback text", client)
+
+    assert len(embedding) == 1536
+    assert all(isinstance(value, float) for value in embedding)
