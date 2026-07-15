@@ -1,4 +1,4 @@
-import { ApiError, requestJson, requestStream } from './http'
+import { ApiError, requestJson } from './http'
 import { supabase } from './supabase'
 
 export { ApiError }
@@ -15,11 +15,6 @@ export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
   created_at: string
-}
-
-export interface StreamMessage {
-  role: 'user' | 'assistant'
-  content: string
 }
 
 export async function signUp(email: string, password: string) {
@@ -57,38 +52,4 @@ export async function createThread(title?: string) {
 
 export async function listThreadMessages(threadId: string) {
   return requestJson<ChatMessage[]>(`/chat/threads/${threadId}/messages`)
-}
-
-export async function streamChat(
-  threadId: string,
-  messages: StreamMessage[],
-  onDelta: (delta: string) => void,
-) {
-  const response = await requestStream('/chat/stream', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'text/plain',
-    },
-    body: JSON.stringify({
-      threadId,
-      messages,
-    }),
-  })
-
-  const stream = response.body
-  if (!stream) {
-    throw new ApiError('No response stream returned')
-  }
-
-  const reader = stream.getReader()
-  const decoder = new TextDecoder()
-
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) {
-      break
-    }
-    onDelta(decoder.decode(value, { stream: true }))
-  }
 }

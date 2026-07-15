@@ -50,9 +50,9 @@ Goal: authenticated user can create a thread, send a message, see streamed stub 
 - [X] `GET /chat/threads/{id}/messages` load thread history
 - [X] `POST /chat/stream` accept AI SDK-like payload, stream stub assistant reply
 - [X] Persist both user and assistant messages for each streamed turn
-- [ ] `app/database/supabase.py` user-scoped + service-role client factories (optional for SQLAlchemy-first flow)
-- [ ] `app/chat/streaming.py` AI SDK event writer module (currently inline streaming)
-- [ ] `app/chat/orchestrator.py` turn lifecycle coordinator (deferred until retrieval/grounding phases)
+- [X] `app/database/supabase.py` user-scoped + service-role client factories (optional for SQLAlchemy-first flow)
+- [X] `app/chat/streaming.py` AI SDK event writer module (AI SDK data-stream SSE events)
+- [X] `app/chat/orchestrator.py` turn lifecycle coordinator (stub turn orchestration + post-stream persistence)
 
 ### Frontend integration for the Phase 3 slice
 
@@ -69,13 +69,13 @@ Goal: authenticated user can create a thread, send a message, see streamed stub 
 - [X] Streaming indicator while assistant response is in flight
 - [X] Load message history from `GET /chat/threads/{id}/messages`
 - [X] `pnpm tsc --noEmit` and `pnpm lint` clean
-- [ ] Replace custom stream client with AI SDK `useChat` + `DefaultChatTransport`
-- [ ] Validate AI SDK wire format compatibility end-to-end
+- [X] Replace custom stream client with AI SDK `useChat` + `DefaultChatTransport`
+- [X] Validate AI SDK wire format compatibility end-to-end (UI message payload + SSE protocol integration test)
 
 ### Phase 3 verification checklist
 
-- [ ] Verify with token + API client: create thread -> send message -> receive streamed stub -> messages persisted
-- [ ] Browser verify loop: sign in -> create thread -> send -> stream observed -> reload -> history intact
+- [X] Verify with token + API client: create thread -> send message -> receive streamed stub -> messages persisted
+- [X] Browser verify loop: sign in -> create thread -> send -> stream observed -> reload -> history intact
 
 ---
 

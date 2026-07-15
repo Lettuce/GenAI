@@ -23,12 +23,28 @@ def _coerce_text_content(content: Any) -> str:
     return ""
 
 
+def _coerce_text_parts(parts: Any) -> str:
+    if not isinstance(parts, list):
+        return ""
+
+    text_parts: list[str] = []
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") == "text" and isinstance(part.get("text"), str):
+            text_parts.append(part["text"])
+
+    return "\n".join(part for part in text_parts if part)
+
+
 def extract_last_user_text(messages: Iterable[dict[str, Any]]) -> str:
     last_user_message = ""
     for message in messages:
         if message.get("role") != "user":
             continue
         content = _coerce_text_content(message.get("content"))
+        if not content.strip():
+            content = _coerce_text_parts(message.get("parts"))
         if content.strip():
             last_user_message = content.strip()
 

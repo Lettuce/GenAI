@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { UIMessage } from 'ai'
+import { useChat } from '@ai-sdk/react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { MessageComposer } from '../../components/chat/MessageComposer'
+import type { DisplayMessage } from '../../components/chat/MessageList'
 import { MessageList } from '../../components/chat/MessageList'
 import { ThreadSidebar } from '../../components/chat/ThreadSidebar'
+import { createChatTransport } from '../../lib/chatTransport'
 import {
   ApiError,
   createThread,
   listThreadMessages,
   listThreads,
-  streamChat,
-  type ChatMessage,
-  type StreamMessage,
   type ChatThread,
 } from '../../lib/api'
 
@@ -20,12 +21,9 @@ export function ChatPage() {
   const params = useParams<{ threadId?: string }>()
 
   const [threads, setThreads] = useState<ChatThread[]>([])
-  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [loadingThreads, setLoadingThreads] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [creatingThread, setCreatingThread] = useState(false)
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [streamingAssistantText, setStreamingAssistantText] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   const activeThreadId = params.threadId ?? null
@@ -33,6 +31,19 @@ export function ChatPage() {
   const hasActiveThread = useMemo(() => {
     return activeThreadId !== null && threads.some((thread) => thread.id === activeThreadId)
   }, [activeThreadId, threads])
+
+  const chatTransport = useMemo(() => createChatTransport(), [])
+
+  const {
+    messages: uiMessages,
+    sendMessage,
+    setMessages: setUiMessages,
+    status,
+    error: chatError,
+    clearError,
+  } = useChat<UIMessage>({
+    transport: chatTransport,
+  })
 
   const refreshThreads = useCallback(async () => {
     const nextThreads = await listThreads()
@@ -44,10 +55,15 @@ export function ChatPage() {
     setLoadingMessages(true)
     try {
       const nextMessages = await listThreadMessages(threadId)
-      setMessages(nextMessages)
+      const nextUiMessages: UIMessage[] = nextMessages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        parts: [{ type: 'text', text: message.content }],
+      }))
+      setUiMessages(nextUiMessages)
     } catch (err) {
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
-        setMessages([])
+        setUiMessages([])
         navigate('/chat', { replace: true })
         setError('This thread is not available.')
         return
@@ -56,18 +72,30 @@ export function ChatPage() {
     } finally {
       setLoadingMessages(false)
     }
-  }, [navigate])
+  }, [navigate, setUiMessages])
 
-  function toStreamMessages(history: ChatMessage[], nextUserText: string): StreamMessage[] {
-    const prior = history
-      .filter((message) => message.role === 'user' || message.role === 'assistant')
-      .map<StreamMessage>((message) => ({
-        role: message.role,
-        content: message.content,
-      }))
+  const displayMessages = useMemo<DisplayMessage[]>(() => {
+    return uiMessages
+      .filter(
+        (message): message is UIMessage & { role: 'user' | 'assistant' } =>
+          message.role === 'user' || message.role === 'assistant',
+      )
+      .map((message) => {
+        const content = message.parts
+          .filter((part): part is Extract<UIMessage['parts'][number], { type: 'text' }> => part.type === 'text')
+          .map((part) => part.text)
+          .join('')
 
-    return [...prior, { role: 'user', content: nextUserText }]
-  }
+        return {
+          id: message.id,
+          role: message.role,
+          content,
+        }
+      })
+  }, [uiMessages])
+
+  const isStreaming = status === 'submitted' || status === 'streaming'
+  const displayError = error ?? chatError?.message ?? null
 
   useEffect(() => {
     let mounted = true
@@ -120,6 +148,7 @@ export function ChatPage() {
 
   async function handleSubmitMessage(text: string) {
     setError(null)
+    clearError()
 
     let threadId = activeThreadId
     if (!threadId) {
@@ -133,33 +162,16 @@ export function ChatPage() {
       return
     }
 
-    setIsStreaming(true)
-    setStreamingAssistantText('')
-
-    const outboundMessages = toStreamMessages(messages, text)
-
-    // Optimistic user bubble while backend persists and starts streaming.
-    setMessages((current) => [
-      ...current,
-      {
-        id: `local-user-${Date.now()}`,
-        thread_id: threadId,
-        role: 'user',
-        content: text,
-        created_at: new Date().toISOString(),
-      },
-    ])
-
     try {
-      await streamChat(
-        threadId,
-        outboundMessages,
-        (delta) => {
-          setStreamingAssistantText((current) => current + delta)
+      await sendMessage(
+        { text },
+        {
+          body: {
+            threadId,
+          },
         },
       )
-      const nextMessages = await listThreadMessages(threadId)
-      setMessages(nextMessages)
+      await loadMessages(threadId)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         setError('Your session expired. Please sign in again.')
@@ -169,9 +181,6 @@ export function ChatPage() {
       } else {
         setError(err instanceof Error ? err.message : 'Failed to stream response')
       }
-    } finally {
-      setIsStreaming(false)
-      setStreamingAssistantText('')
     }
   }
 
@@ -192,18 +201,14 @@ export function ChatPage() {
           <p className="text-xs text-slate-500">FastAPI stub stream with persisted history</p>
         </div>
 
-        {error ? (
-          <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{error}</div>
+        {displayError ? (
+          <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{displayError}</div>
         ) : null}
 
         {loadingMessages ? (
           <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Loading messages…</div>
         ) : (
-          <MessageList
-            messages={messages}
-            streamingAssistantText={streamingAssistantText}
-            isStreaming={isStreaming}
-          />
+          <MessageList messages={displayMessages} isStreaming={isStreaming} />
         )}
 
         <MessageComposer disabled={isStreaming} onSubmit={handleSubmitMessage} />

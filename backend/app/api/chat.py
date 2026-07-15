@@ -127,4 +127,12 @@ async def post_chat_stream(
         async for chunk in stream_stub_turn(db=db, thread_id=thread_id, user_text=user_text):
             yield chunk
 
-    return StreamingResponse(stream_text(), media_type="text/plain; charset=utf-8")
+    return StreamingResponse(
+        stream_text(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "x-vercel-ai-ui-message-stream": "v1",
+        },
+    )

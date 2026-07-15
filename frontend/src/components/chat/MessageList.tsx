@@ -1,13 +1,16 @@
-import type { ChatMessage } from '../../lib/api'
+export interface DisplayMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+}
 
 interface MessageListProps {
-  messages: ChatMessage[]
-  streamingAssistantText: string
+  messages: DisplayMessage[]
   isStreaming: boolean
 }
 
-export function MessageList({ messages, streamingAssistantText, isStreaming }: MessageListProps) {
-  const hasMessages = messages.length > 0 || Boolean(streamingAssistantText)
+export function MessageList({ messages, isStreaming }: MessageListProps) {
+  const hasMessages = messages.length > 0
 
   if (!hasMessages) {
     return (
@@ -30,14 +33,7 @@ export function MessageList({ messages, streamingAssistantText, isStreaming }: M
           </div>
         </div>
       ))}
-
-      {isStreaming ? (
-        <div className="flex justify-start">
-          <div className="max-w-3xl rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 shadow-sm">
-            {streamingAssistantText || 'Streaming response…'}
-          </div>
-        </div>
-      ) : null}
+      {isStreaming ? <p className="px-1 text-xs text-amber-700">Streaming response...</p> : null}
     </div>
   )
 }
