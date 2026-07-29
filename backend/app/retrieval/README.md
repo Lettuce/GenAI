@@ -28,6 +28,12 @@ It combines:
 - `rrf_k=60`
 - `neighbor_window=1`
 
+### Phase 6 settings (`app/schemas/config.py`)
+
+- `retrieval_top_k` (default `8`): target number of passages returned by retrieval.
+- `rf_60` (default `60`): Reciprocal Rank Fusion constant (RRF K value).
+- `grounding_threshold` (default `0.75`): minimum grounding score target for grounded answer acceptance.
+
 ### Embedding defaults (`embeddings.py` + `app/config.py`)
 
 - model: `settings.embedding_model` (default `text-embedding-3-small`)
@@ -41,8 +47,9 @@ It combines:
 
 - language config: `english`
 - tokenization: alphanumeric keyword extraction
-- stopword filtering: internal stopword set
-- max tokens used for FTS query: `12`
+- keyword selection: 3 to 5 high-signal terms via `app.assistant.tools`
+- stopword filtering: internal stopword set + conversational filler filtering
+- max tokens used for FTS query: `5`
 - query shape: OR-based `to_tsquery('english', 'term1 | term2 | ...')`
 
 ## Pipeline behavior
@@ -123,3 +130,35 @@ flowchart LR
 - This module currently uses RRF-only fusion (no reranker).
 - Retrieval quality is best when semantic embeddings are available.
 - If semantic retrieval is disabled (`semantic_limit=0`), the pipeline still runs in lexical-only mode.
+
+## Grounding model (Phase 6)
+
+Grounding is defined as: every material claim in the final assistant response should be supported by one or more retrieved passages.
+
+Current state in this codebase:
+
+- Retrieval is fully implemented and returns typed `RetrievedPassage` objects with metadata and neighbor context.
+- A configurable `grounding_threshold` exists in settings.
+- A dedicated grounding validator/scorer is not yet implemented in `app/retrieval` or `app/chat`.
+
+Practical implication:
+
+- Today, retrieval can provide evidence candidates, but final answer validation against a numeric grounding score is not enforced in code yet.
+
+Recommended validation flow for implementation:
+
+1. Generate draft answer from retrieved context.
+2. Split draft into atomic claims.
+3. For each claim, compute support against top passages (semantic overlap, exact span match, or citation alignment).
+4. Aggregate claim support into a grounding score in $[0, 1]$.
+5. If score is below `grounding_threshold`, either:
+    - ask retrieval for broader context, or
+    - return a constrained response that explicitly states insufficient evidence.
+
+Suggested score shape:
+
+$$
+grounding\_score = \frac{\sum_{i=1}^{n} w_i \cdot supported_i}{\sum_{i=1}^{n} w_i}
+$$
+
+Where $supported_i \in \{0, 1\}$ for each claim and $w_i$ is optional claim importance.

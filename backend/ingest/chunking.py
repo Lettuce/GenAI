@@ -9,7 +9,7 @@ from docling.chunking import HierarchicalChunker, HybridChunker
 from docling.document_converter import DocumentConverter
 from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
 
-from app.config import settings
+from app.schemas.config import settings
 
 
 @dataclass(frozen=True)

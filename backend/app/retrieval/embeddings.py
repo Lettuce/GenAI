@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from openai import OpenAI
 
-from app.config import settings
+from app.schemas.config import settings
 
 
 def build_embedding_client() -> OpenAI:

@@ -7,7 +7,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.schemas.config import settings
 from app.database.models.document_chunk import DocumentChunk
 from app.database.models.source_document import SourceDocument
 from ingest.chunking import build_chunkers, chunk_document

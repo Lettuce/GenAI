@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import BeforeValidator, Field, field_validator
@@ -13,9 +14,12 @@ def _split_csv(value: object) -> list[str]:
     raise TypeError("allowed_origins must be a comma-separated string or list")
 
 
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=BACKEND_ROOT / ".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
@@ -25,16 +29,26 @@ class Settings(BaseSettings):
     supabase_anon_key: str
     supabase_service_role_key: str
     database_url: str
+
     openai_api_key: str
+    openai_chat_model: str = "gpt-5.5"
+    llm_model: str = "gpt-4o"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+
+    retrieval_top_k: int = Field(default=8, ge=1)
+    rf_60: int = Field(default=60, ge=1)
+    grounding_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
+
     allowed_origins: Annotated[
         list[str],
         NoDecode,
         BeforeValidator(_split_csv),
     ] = Field(default_factory=lambda: ["http://localhost:5173"])
 
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 1536
-    chat_model: str = "gpt-4o-mini"
+    @property
+    def chat_model(self) -> str:
+        return self.openai_chat_model
 
     @field_validator("database_url")
     @classmethod

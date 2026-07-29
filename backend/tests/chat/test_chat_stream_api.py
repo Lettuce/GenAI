@@ -82,6 +82,6 @@ def test_stream_endpoint_accepts_ui_messages_and_persists_turn(tmp_path) -> None
 
         assert [message.role for message in persisted] == ['user', 'assistant']
         assert persisted[0].content == 'Check wire format compatibility.'
-        assert persisted[1].content.startswith('Stub assistant response:')
+        assert persisted[1].content.startswith('I do not have enough evidence')
     finally:
         app.dependency_overrides.clear()

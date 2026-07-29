@@ -12,7 +12,7 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from app.config import settings
+from app.schemas.config import settings
 from app.database.base import Base
 from app.database.models import (  # noqa: F401  # ensure models are imported
     ChatMessage,

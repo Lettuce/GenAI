@@ -112,7 +112,7 @@ Note: this run used lexical-only fallback because OpenAI embedding quota returne
 
 ### Phase 5 — Next steps
 
-- [X] Add neighbor chunk fetch and include surrounding context in retriever output
+- [X] Add neighbor chunk fetch and include surrounding context in  retriever output
 - [X] Run manual relevance checks using the 10 questions in `client-brief.md`
 - [X] Capture retrieval tuning notes (limits, filters, and RRF behavior) in a short Phase 5 relevance report
 
@@ -122,15 +122,29 @@ Note: this run used lexical-only fallback because OpenAI embedding quota returne
 
 Goal: grounded answers only, with enforced citation policy.
 
-- [ ] `app/assistant/instructions.md` product contract (cite all facts, refuse without evidence, no stock picks)
-- [ ] `app/assistant/outputs.py` typed `GroundedAnswer`, `Citation`, `SourcePassage`
-- [ ] `app/assistant/deps.py` runtime dependency dataclass
-- [ ] `app/assistant/agent.py` PydanticAI agent with bounded retrieval tools
-- [ ] Wire orchestrator to retrieval + agent + persistence
-- [ ] `app/grounding/validator.py` enforce citation invariants and failure behavior
-- [ ] Persist `message_citations` with assistant messages
-- [ ] Unit tests for grounding and insufficient-evidence paths
-- [ ] Integration test against live OpenAI + Supabase
+- [X] `app/assistant/instructions.md` product contract (cite all facts, refuse without evidence, no stock picks)
+- [X] `app/assistant/outputs.py` typed `GroundedAnswer`, `Citation`, `SourcePassage`
+- [X] `app/assistant/deps.py` runtime dependency dataclass
+- [X] `app/assistant/agent.py` PydanticAI agent with bounded retrieval tools
+- [X] Wire orchestrator to retrieval + agent + persistence
+- [X] `app/grounding/validator.py` enforce citation invariants and failure behavior
+- [X] Persist `message_citations` with assistant messages
+- [X] Unit tests for grounding and insufficient-evidence paths
+- [X] Integration test against live OpenAI + Supabase
+
+### Phase 6 status update (current repo)
+
+- This subsection exists to keep a concrete, line-by-line reality check while Phase 6 work was in progress and avoid over-marking unfinished items.
+- [X] Added assistant module scaffold (`app/assistant/`) with grounded-agent and retrieval-term tooling modules.
+- [X] Product-grounding contract implemented in `app/assistant/instructions.md` (cite-all-facts, refuse-without-evidence, no-stock-picks).
+- [X] Grounded output schema implemented in `app/assistant/outputs.py` (`GroundedAnswer`, `Citation`, `SourcePassage`).
+- [X] Runtime deps container implemented in `app/assistant/deps.py`.
+- [X] PydanticAI grounded agent boundary implemented in `app/assistant/agent.py` with bounded `search_passages` tool.
+- [X] Orchestrator switched to grounded flow (`stream_grounded_turn`) and wired to retrieval + agent + validator + persistence.
+- [X] Grounding validator implemented in `app/grounding/validator.py` (citation-required rule, chunk/document consistency checks, duplicate normalization, refusal handling).
+- [X] Citation persistence implemented (`message_citations` model + Alembic migration + `chats.add_turn_with_citations`).
+- [X] Grounding/refusal unit tests implemented (`tests/assistant/test_agent.py`, `tests/grounding/test_validator.py`, and citation persistence test).
+- [X] Live grounded integration test implemented and executed (`tests/chat/test_grounded_integration.py` with `RUN_LIVE_GROUNDED_TEST=1`).
 
 ---
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.config import settings
+from app.schemas.config import settings
 from app.retrieval.embeddings import embed_query
 
 

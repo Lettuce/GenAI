@@ -1,64 +1,17 @@
 from __future__ import annotations
 
-import re
-
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
+from app.assistant.tools import build_fts_query_terms
 from app.database.models.document_chunk import DocumentChunk
 from app.database.models.source_document import SourceDocument
 from app.retrieval.types import RankedChunkCandidate, RetrievalFilters
 
-_STOPWORDS = {
-    "the",
-    "and",
-    "for",
-    "from",
-    "with",
-    "that",
-    "this",
-    "what",
-    "when",
-    "where",
-    "which",
-    "were",
-    "does",
-    "did",
-    "into",
-    "across",
-    "through",
-    "about",
-    "their",
-    "then",
-    "than",
-    "have",
-    "has",
-    "had",
-    "could",
-    "would",
-    "should",
-}
 
-
-def _build_fts_query_terms(query_text: str, *, max_terms: int = 12) -> str:
-    tokens = re.findall(r"[a-zA-Z0-9]+", query_text.lower())
-    seen: set[str] = set()
-    filtered: list[str] = []
-    for token in tokens:
-        if len(token) < 3 or token in _STOPWORDS:
-            continue
-        if token in seen:
-            continue
-        seen.add(token)
-        filtered.append(token)
-        if len(filtered) >= max_terms:
-            break
-
-    if not filtered:
-        return ""
-
-    # Use OR semantics to improve recall for long analyst questions.
-    return " | ".join(filtered)
+def _build_fts_query_terms(query_text: str, *, max_terms: int = 5) -> str:
+    capped_terms = min(max(3, max_terms), 5)
+    return build_fts_query_terms(query_text, min_terms=3, max_terms=capped_terms)
 
 
 def _apply_filters(stmt: Select, filters: RetrievalFilters | None) -> Select:

@@ -6,13 +6,16 @@ import uuid
 from collections.abc import AsyncGenerator
 
 
-def build_stub_response(user_text: str) -> str:
+def build_stub_response(user_text: str, *, model_name: str | None = None) -> str:
+    prefix = "Stub assistant response"
+    model_hint = f" [model={model_name}]" if model_name else ""
+
     if not user_text:
-        return "Stub assistant response: no user text was provided in this turn."
+        return f"{prefix}: no user text was provided in this turn.{model_hint}"
 
     snippet = user_text[:180]
     return (
-        "Stub assistant response: I received your message and streaming is wired end-to-end. "
+        f"{prefix}: I received your message and streaming is wired end-to-end.{model_hint} "
         f"Echo: {snippet}"
     )
 

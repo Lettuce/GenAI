@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from supabase import Client, create_client
 
-from app.config import settings
+from app.schemas.config import settings
 
 security = HTTPBearer(auto_error=False)
 

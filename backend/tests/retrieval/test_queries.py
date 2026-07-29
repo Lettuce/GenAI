@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from app.retrieval.queries import lexical_search, semantic_search
+from app.retrieval.queries import _build_fts_query_terms, lexical_search, semantic_search
 from app.retrieval.types import RetrievalFilters
 
 
@@ -56,6 +56,22 @@ def test_lexical_search_returns_empty_for_blank_query() -> None:
     candidates = lexical_search(db, query_text="   ", limit=10)
 
     assert candidates == []
+
+
+def test_build_fts_query_terms_extracts_finance_keywords() -> None:
+    query = "What sources would you use to answer a question about Apple Services growth?"
+
+    terms = _build_fts_query_terms(query)
+
+    assert terms == "apple | services | growth"
+
+
+def test_build_fts_query_terms_caps_terms_to_five() -> None:
+    query = "Show quarterly operating margin and revenue growth and cash flow guidance for Microsoft"
+
+    terms = _build_fts_query_terms(query)
+
+    assert len(terms.split(" | ")) == 5
 
 
 def test_filters_are_applied_to_query_statement() -> None:

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database.models.chat_message import ChatMessage
+from app.database.models.message_citation import MessageCitation
 from app.database.models.chat_thread import ChatThread
 from app.database.models.user import User
 
@@ -24,6 +25,25 @@ class PersistedMessage:
     thread_id: str
     role: str
     content: str
+    created_at: str
+
+
+@dataclass
+class CitationWrite:
+    chunk_id: uuid.UUID
+    source_document_id: uuid.UUID
+    quote: str | None = None
+    page_number: int | None = None
+
+
+@dataclass
+class PersistedCitation:
+    id: str
+    message_id: str
+    chunk_id: str
+    source_document_id: str
+    quote: str | None
+    page_number: int | None
     created_at: str
 
 
@@ -143,4 +163,70 @@ def add_turn_messages(
             content=assistant_message.content,
             created_at=assistant_message.created_at.isoformat(),
         ),
+    )
+
+
+def add_turn_with_citations(
+    db: Session,
+    *,
+    thread_id: uuid.UUID,
+    user_content: str,
+    assistant_content: str,
+    citations: list[CitationWrite],
+) -> tuple[PersistedMessage, PersistedMessage, list[PersistedCitation]]:
+    user_message = ChatMessage(thread_id=thread_id, role="user", content=user_content)
+    assistant_message = ChatMessage(thread_id=thread_id, role="assistant", content=assistant_content)
+
+    db.add(user_message)
+    db.add(assistant_message)
+    db.flush()
+
+    citation_rows: list[MessageCitation] = []
+    for citation in citations:
+        citation_rows.append(
+            MessageCitation(
+                message_id=assistant_message.id,
+                chunk_id=citation.chunk_id,
+                source_document_id=citation.source_document_id,
+                quote=citation.quote,
+                page_number=citation.page_number,
+            )
+        )
+
+    if citation_rows:
+        db.add_all(citation_rows)
+
+    db.commit()
+    db.refresh(user_message)
+    db.refresh(assistant_message)
+    for citation_row in citation_rows:
+        db.refresh(citation_row)
+
+    return (
+        PersistedMessage(
+            id=str(user_message.id),
+            thread_id=str(user_message.thread_id),
+            role=user_message.role,
+            content=user_message.content,
+            created_at=user_message.created_at.isoformat(),
+        ),
+        PersistedMessage(
+            id=str(assistant_message.id),
+            thread_id=str(assistant_message.thread_id),
+            role=assistant_message.role,
+            content=assistant_message.content,
+            created_at=assistant_message.created_at.isoformat(),
+        ),
+        [
+            PersistedCitation(
+                id=str(citation_row.id),
+                message_id=str(citation_row.message_id),
+                chunk_id=str(citation_row.chunk_id),
+                source_document_id=str(citation_row.source_document_id),
+                quote=citation_row.quote,
+                page_number=citation_row.page_number,
+                created_at=citation_row.created_at.isoformat(),
+            )
+            for citation_row in citation_rows
+        ],
     )

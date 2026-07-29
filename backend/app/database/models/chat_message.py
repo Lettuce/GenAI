@@ -11,6 +11,7 @@ from app.database.base import Base
 
 if TYPE_CHECKING:
     from app.database.models.chat_thread import ChatThread
+    from app.database.models.message_citation import MessageCitation
 
 
 class ChatMessage(Base):
@@ -32,3 +33,4 @@ class ChatMessage(Base):
     )
 
     thread: Mapped["ChatThread"] = relationship(back_populates="messages")
+    citations: Mapped[list["MessageCitation"]] = relationship(back_populates="message", cascade="all, delete-orphan")

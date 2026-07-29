@@ -5,7 +5,7 @@ import hashlib
 import httpx
 from openai import APIConnectionError, APIStatusError, APITimeoutError, OpenAI, RateLimitError
 
-from app.config import settings
+from app.schemas.config import settings
 
 
 def build_embedding_client() -> OpenAI:

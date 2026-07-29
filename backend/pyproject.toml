@@ -33,6 +33,12 @@ exclude-newer = "7 days"
 dev = [
     "docling==2.111.0",
     "ipykernel==7.3.0",
+    "nest-asyncio==1.6.0",
     "pytest==9.1.1",
     "ruff==0.15.18",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that hit live external dependencies",
 ]

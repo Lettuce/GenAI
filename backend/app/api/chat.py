@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user
-from app.chat.orchestrator import stream_stub_turn
+from app.chat.orchestrator import stream_grounded_turn
 from app.chat.messages import extract_last_user_text
 from app.database import chats
 from app.database.session import get_db_session
@@ -124,7 +124,12 @@ async def post_chat_stream(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No user message content found")
 
     async def stream_text() -> AsyncGenerator[str, None]:
-        async for chunk in stream_stub_turn(db=db, thread_id=thread_id, user_text=user_text):
+        async for chunk in stream_grounded_turn(
+            db=db,
+            thread_id=thread_id,
+            user_text=user_text,
+            user_id=user_id,
+        ):
             yield chunk
 
     return StreamingResponse(

@@ -10,6 +10,7 @@ from app.retrieval.fusion import fuse_ranked_candidates
 from app.retrieval.passages import build_passages
 from app.retrieval.queries import lexical_search, semantic_search
 from app.retrieval.types import RetrievedPassage, RetrievalFilters
+from app.schemas.config import settings
 
 
 class HybridRetriever:
@@ -21,8 +22,8 @@ class HybridRetriever:
         embedding_fn: Callable[[str, OpenAI], list[float]] | None = None,
         semantic_limit: int = 30,
         lexical_limit: int = 30,
-        final_limit: int = 8,
-        rrf_k: int = 60,
+        final_limit: int = settings.retrieval_top_k,
+        rrf_k: int = settings.rf_60,
         neighbor_window: int = 1,
     ) -> None:
         self._db = db

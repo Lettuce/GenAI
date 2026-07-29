@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from supabase import Client, create_client
 
-from app.config import settings
+from app.schemas.config import settings
 
 
 def create_service_role_client() -> Client:
