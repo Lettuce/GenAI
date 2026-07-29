@@ -47,6 +47,14 @@ class RetrievedPassage:
     fused_score: float
     semantic_rank: int | None
     lexical_rank: int | None
+    neighbor_passages: list["NeighborPassage"]
+
+
+@dataclass(frozen=True)
+class NeighborPassage:
+    chunk_id: str
+    content: str
+    page_number: int | None
 
 
 class RetrieverProtocol(Protocol):

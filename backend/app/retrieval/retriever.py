@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from openai import OpenAI
 from sqlalchemy.orm import Session
 
@@ -16,27 +18,32 @@ class HybridRetriever:
         db: Session,
         *,
         embedding_client: OpenAI | None = None,
+        embedding_fn: Callable[[str, OpenAI], list[float]] | None = None,
         semantic_limit: int = 30,
         lexical_limit: int = 30,
         final_limit: int = 8,
         rrf_k: int = 60,
+        neighbor_window: int = 1,
     ) -> None:
         self._db = db
         self._embedding_client = embedding_client or build_embedding_client()
+        self._embedding_fn = embedding_fn or embed_query
         self._semantic_limit = semantic_limit
         self._lexical_limit = lexical_limit
         self._final_limit = final_limit
         self._rrf_k = rrf_k
+        self._neighbor_window = neighbor_window
 
     def retrieve(self, query: str, *, filters: RetrievalFilters | None = None) -> list[RetrievedPassage]:
-        query_embedding = embed_query(query, self._embedding_client)
-
-        semantic_candidates = semantic_search(
-            self._db,
-            query_embedding=query_embedding,
-            limit=self._semantic_limit,
-            filters=filters,
-        )
+        semantic_candidates = []
+        if self._semantic_limit > 0:
+            query_embedding = self._embedding_fn(query, self._embedding_client)
+            semantic_candidates = semantic_search(
+                self._db,
+                query_embedding=query_embedding,
+                limit=self._semantic_limit,
+                filters=filters,
+            )
         lexical_candidates = lexical_search(
             self._db,
             query_text=query,
@@ -50,7 +57,7 @@ class HybridRetriever:
             rrf_k=self._rrf_k,
             limit=self._final_limit,
         )
-        return build_passages(self._db, fused_candidates)
+        return build_passages(self._db, fused_candidates, neighbor_window=self._neighbor_window)
 
     async def aretrieve(self, query: str, *, filters: RetrievalFilters | None = None) -> list[RetrievedPassage]:
         return self.retrieve(query, filters=filters)

@@ -35,6 +35,7 @@ def test_types_can_be_constructed() -> None:
         fused_score=0.02,
         semantic_rank=1,
         lexical_rank=None,
+        neighbor_passages=[],
     )
 
     assert filters.tickers == ["AAPL"]

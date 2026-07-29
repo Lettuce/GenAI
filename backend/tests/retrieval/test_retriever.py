@@ -63,10 +63,16 @@ def test_hybrid_retriever_orchestrates_rrf_pipeline(monkeypatch) -> None:
             )
         ]
 
-    def _fake_build_passages(db_session: object, fused_candidates: list[FusedChunkCandidate]) -> list[RetrievedPassage]:
+    def _fake_build_passages(
+        db_session: object,
+        fused_candidates: list[FusedChunkCandidate],
+        *,
+        neighbor_window: int,
+    ) -> list[RetrievedPassage]:
         call_log.append("passages")
         assert db_session is db
         assert len(fused_candidates) == 1
+        assert neighbor_window == 2
         return [
             RetrievedPassage(
                 chunk_id=str(chunk_id),
@@ -83,6 +89,7 @@ def test_hybrid_retriever_orchestrates_rrf_pipeline(monkeypatch) -> None:
                 fused_score=0.032,
                 semantic_rank=1,
                 lexical_rank=1,
+                neighbor_passages=[],
             )
         ]
 
@@ -98,7 +105,7 @@ def test_hybrid_retriever_orchestrates_rrf_pipeline(monkeypatch) -> None:
     monkeypatch.setattr("app.retrieval.retriever.fuse_ranked_candidates", _fake_fuse)
     monkeypatch.setattr("app.retrieval.retriever.build_passages", _fake_build_passages)
 
-    retriever = HybridRetriever(db, embedding_client=embedding_client)
+    retriever = HybridRetriever(db, embedding_client=embedding_client, neighbor_window=2)
 
     passages = retriever.retrieve("gross margin trend", filters=filters_obj)
 

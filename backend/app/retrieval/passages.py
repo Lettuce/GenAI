@@ -2,16 +2,22 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.database.documents import get_passage_rows
-from app.retrieval.types import FusedChunkCandidate, RetrievedPassage
+from app.database.documents import get_neighbor_passage_rows, get_passage_rows
+from app.retrieval.types import FusedChunkCandidate, NeighborPassage, RetrievedPassage
 
 
-def build_passages(db: Session, fused_candidates: list[FusedChunkCandidate]) -> list[RetrievedPassage]:
+def build_passages(
+    db: Session,
+    fused_candidates: list[FusedChunkCandidate],
+    *,
+    neighbor_window: int = 1,
+) -> list[RetrievedPassage]:
     if not fused_candidates:
         return []
 
     chunk_ids = [candidate.chunk_id for candidate in fused_candidates]
     rows = get_passage_rows(db, chunk_ids)
+    neighbors_by_chunk_id = get_neighbor_passage_rows(db, seed_chunk_ids=chunk_ids, window=neighbor_window)
     rows_by_chunk_id = {row.chunk_id: row for row in rows}
 
     passages: list[RetrievedPassage] = []
@@ -19,6 +25,16 @@ def build_passages(db: Session, fused_candidates: list[FusedChunkCandidate]) -> 
         row = rows_by_chunk_id.get(candidate.chunk_id)
         if row is None:
             continue
+
+        raw_neighbors = neighbors_by_chunk_id.get(candidate.chunk_id, [])
+        neighbor_passages = [
+            NeighborPassage(
+                chunk_id=str(neighbor.chunk_id),
+                content=neighbor.content,
+                page_number=neighbor.page_number,
+            )
+            for neighbor in raw_neighbors
+        ]
 
         passages.append(
             RetrievedPassage(
@@ -36,6 +52,7 @@ def build_passages(db: Session, fused_candidates: list[FusedChunkCandidate]) -> 
                 fused_score=candidate.fused_score,
                 semantic_rank=candidate.semantic_rank,
                 lexical_rank=candidate.lexical_rank,
+                neighbor_passages=neighbor_passages,
             )
         )
 

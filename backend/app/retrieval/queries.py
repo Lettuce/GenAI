@@ -1,11 +1,64 @@
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.database.models.document_chunk import DocumentChunk
 from app.database.models.source_document import SourceDocument
 from app.retrieval.types import RankedChunkCandidate, RetrievalFilters
+
+_STOPWORDS = {
+    "the",
+    "and",
+    "for",
+    "from",
+    "with",
+    "that",
+    "this",
+    "what",
+    "when",
+    "where",
+    "which",
+    "were",
+    "does",
+    "did",
+    "into",
+    "across",
+    "through",
+    "about",
+    "their",
+    "then",
+    "than",
+    "have",
+    "has",
+    "had",
+    "could",
+    "would",
+    "should",
+}
+
+
+def _build_fts_query_terms(query_text: str, *, max_terms: int = 12) -> str:
+    tokens = re.findall(r"[a-zA-Z0-9]+", query_text.lower())
+    seen: set[str] = set()
+    filtered: list[str] = []
+    for token in tokens:
+        if len(token) < 3 or token in _STOPWORDS:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        filtered.append(token)
+        if len(filtered) >= max_terms:
+            break
+
+    if not filtered:
+        return ""
+
+    # Use OR semantics to improve recall for long analyst questions.
+    return " | ".join(filtered)
 
 
 def _apply_filters(stmt: Select, filters: RetrievalFilters | None) -> Select:
@@ -73,7 +126,11 @@ def lexical_search(
     if not trimmed_query:
         return []
 
-    ts_query = func.plainto_tsquery("english", trimmed_query)
+    ts_query_terms = _build_fts_query_terms(trimmed_query)
+    if not ts_query_terms:
+        return []
+
+    ts_query = func.to_tsquery("english", ts_query_terms)
     rank_expr = func.ts_rank_cd(DocumentChunk.search_vector, ts_query)
 
     stmt = (

@@ -99,13 +99,22 @@ Goal: sample corpus is parsed, chunked, embedded, and stored.
 
 Goal: given a query, return ranked source passages without LLM generation.
 
-- [ ] `app/retrieval/queries.py` semantic search over embeddings (pgvector)
-- [ ] `app/retrieval/queries.py` lexical search over `search_vector` (Postgres FTS)
-- [ ] `app/retrieval/fusion.py` reciprocal rank fusion
-- [ ] `app/retrieval/retriever.py` orchestrate embed -> dual search -> fuse -> neighbor fetch
-- [ ] `app/database/documents.py` typed chunk/document lookup helpers
-- [ ] Unit tests for fusion and retriever ranking behavior
-- [ ] Manual relevance checks with client-brief questions
+- [X] `app/retrieval/queries.py` semantic search over embeddings (pgvector)
+- [X] `app/retrieval/queries.py` lexical search over `search_vector` (Postgres FTS)
+- [X] `app/retrieval/fusion.py` reciprocal rank fusion
+- [X] `app/retrieval/retriever.py` orchestrate embed -> dual search -> fuse -> neighbor fetch
+- [X] `app/database/documents.py` typed chunk/document lookup helpers
+- [X] Unit tests for fusion and retriever ranking behavior
+- [X] Manual relevance checks with client-brief questions
+
+Relevance-check artifacts are in `docs/phase-5-relevance-report.md` and `docs/phase-5-retrieval-tuning-notes.md`.
+Note: this run used lexical-only fallback because OpenAI embedding quota returned 429.
+
+### Phase 5 — Next steps
+
+- [X] Add neighbor chunk fetch and include surrounding context in retriever output
+- [X] Run manual relevance checks using the 10 questions in `client-brief.md`
+- [X] Capture retrieval tuning notes (limits, filters, and RRF behavior) in a short Phase 5 relevance report
 
 ---
 
