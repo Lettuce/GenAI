@@ -3,14 +3,13 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Callable
 
 from pydantic_ai import Agent, RunContext
 from sqlalchemy.orm import Session
 
 from app.assistant.deps import AssistantRuntimeDeps
 from app.assistant.depths import DEPTH_CONFIG, SearchDepth
-from app.assistant.outputs import AssistantSearchPlan, AssistantSearchResult, GroundedAnswer, SourcePassage
+from app.assistant.outputs import AssistantSearchPlan, AssistantSearchResult, Citation, GroundedAnswer, SourcePassage
 from app.assistant.progress import AssistantProgressTracker
 from app.assistant.tools import build_fts_query_terms, extract_search_terms
 from app.database import documents
@@ -166,14 +165,14 @@ class AssistantSearchAgent:
 class GroundedAssistantAgent:
     def __init__(self, *, model_name: str | None = None) -> None:
         self._agent = getDocumentAgent(model_name=model_name)
-        self._run_sync: Callable[..., object] = self._agent.run_sync
+        self._run = self._agent.run
 
     @staticmethod
     def retrieve_passages(deps: AssistantRuntimeDeps, query: str) -> list[SourcePassage]:
         retrieved = deps.retriever.retrieve(query, filters=deps.filters)
         return [_to_source_passage(passage) for passage in retrieved]
 
-    def answer(
+    async def answer(
         self,
         *,
         user_query: str,
@@ -197,15 +196,49 @@ class GroundedAssistantAgent:
             f"Retrieved passages JSON: {_format_passages(passages)}"
         )
 
-        result = self._run_sync(prompt, deps=deps)
+        try:
+            result = await self._run(prompt, deps=deps)
+        except Exception as exc:
+            return self._build_best_effort_answer(passages, failure_reason=str(exc))
+
         answer = getattr(result, "output", result)
         if isinstance(answer, GroundedAnswer):
             return answer
 
         # Defensive fallback if tool/model output shape drifts.
+        return self._build_best_effort_answer(passages, failure_reason="Model output could not be parsed as GroundedAnswer.")
+
+    @staticmethod
+    def _build_best_effort_answer(passages: list[SourcePassage], *, failure_reason: str) -> GroundedAnswer:
+        citations = [
+            Citation(
+                chunk_id=passage.chunk_id,
+                document_id=passage.document_id,
+                quote=passage.content[:320],
+                page_number=passage.page_number,
+            )
+            for passage in passages[:3]
+        ]
+
+        if not citations:
+            return GroundedAnswer(
+                answer_text="I do not have enough evidence in the retrieved filings to answer this safely.",
+                citations=[],
+                insufficient_evidence=True,
+                refusal_reason=failure_reason,
+            )
+
+        answer_lines = ["I found relevant filing evidence but had trouble completing the final response formatting."]
+        for index, passage in enumerate(passages[:3], start=1):
+            company = passage.company_name or passage.ticker or "Unknown issuer"
+            filing = passage.filing_type or "filing"
+            year = str(passage.filing_year) if passage.filing_year is not None else "unknown year"
+            snippet = passage.content.replace("\n", " ").strip()[:220]
+            answer_lines.append(f"{index}. {company} ({filing} {year}): {snippet}")
+
         return GroundedAnswer(
-            answer_text="I do not have enough evidence in the retrieved filings to answer this safely.",
-            citations=[],
-            insufficient_evidence=True,
-            refusal_reason="Model output could not be parsed as GroundedAnswer.",
+            answer_text="\n".join(answer_lines),
+            citations=citations,
+            insufficient_evidence=False,
+            refusal_reason=None,
         )

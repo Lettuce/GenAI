@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.auth.dependencies import get_current_user
 from app.database.models.chat_message import ChatMessage
 from app.database.models.chat_thread import ChatThread
+from app.database.models.message_citation import MessageCitation
+from app.database.models.source_document import SourceDocument
 from app.database.models.user import User
 from app.database.session import get_db_session
 from app.main import app
@@ -82,6 +84,165 @@ def test_stream_endpoint_accepts_ui_messages_and_persists_turn(tmp_path) -> None
 
         assert [message.role for message in persisted] == ['user', 'assistant']
         assert persisted[0].content == 'Check wire format compatibility.'
-        assert persisted[1].content.startswith('I do not have enough evidence')
+        assert persisted[1].content.startswith('Analyzing\n')
+        assert 'Searching\n' in persisted[1].content
+        assert 'Reading\n' in persisted[1].content
+        assert 'Verifying\n' in persisted[1].content
+        assert 'Answering\nI do not have enough evidence' in persisted[1].content
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_patch_thread_updates_title(tmp_path) -> None:
+    db_path = tmp_path / 'chat-thread-rename-test.db'
+    engine = create_engine(f'sqlite+pysqlite:///{db_path}', future=True)
+    session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False, class_=Session)
+
+    User.__table__.create(engine)
+    ChatThread.__table__.create(engine)
+    ChatMessage.__table__.create(engine)
+
+    user_id = uuid.uuid4()
+    thread_id = uuid.uuid4()
+
+    with session_factory() as session:
+        session.add(User(id=user_id, email='phase3@example.com'))
+        session.add(ChatThread(id=thread_id, user_id=user_id, title='New Chat'))
+        session.commit()
+
+    def override_get_current_user() -> dict[str, str]:
+        return {'id': str(user_id), 'email': 'phase3@example.com'}
+
+    def override_get_db_session() -> Generator[Session, None, None]:
+        session = session_factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_db_session] = override_get_db_session
+
+    try:
+        client = TestClient(app)
+        response = client.patch(
+            f'/chat/threads/{thread_id}',
+            json={'title': 'Fiscal 2024 Services Summary'},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload['id'] == str(thread_id)
+        assert payload['title'] == 'Fiscal 2024 Services Summary'
+
+        with session_factory() as session:
+            persisted = session.execute(select(ChatThread).where(ChatThread.id == thread_id)).scalar_one()
+
+        assert persisted.title == 'Fiscal 2024 Services Summary'
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_thread_messages_includes_citations(tmp_path) -> None:
+    db_path = tmp_path / 'chat-message-citations-test.db'
+    engine = create_engine(f'sqlite+pysqlite:///{db_path}', future=True)
+    session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False, class_=Session)
+
+    User.__table__.create(engine)
+    SourceDocument.__table__.create(engine)
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            """
+            CREATE TABLE document_chunks (
+                id CHAR(32) PRIMARY KEY,
+                source_document_id CHAR(32) NOT NULL,
+                content TEXT NOT NULL,
+                embedding TEXT NULL,
+                search_vector TEXT NULL,
+                page_number INTEGER NULL,
+                created_at DATETIME NULL
+            )
+            """
+        )
+    ChatThread.__table__.create(engine)
+    ChatMessage.__table__.create(engine)
+    MessageCitation.__table__.create(engine)
+
+    user_id = uuid.uuid4()
+    thread_id = uuid.uuid4()
+    document_id = uuid.uuid4()
+    chunk_id = uuid.uuid4()
+    assistant_message_id = uuid.uuid4()
+
+    with session_factory() as session:
+        session.add(User(id=user_id, email='phase3@example.com'))
+        session.add(
+            SourceDocument(
+                id=document_id,
+                ticker='MSFT',
+                company_name='Microsoft',
+                filing_type='10-K',
+                filing_year=2024,
+                source_url='https://example.com/msft-10k',
+            )
+        )
+        session.connection().exec_driver_sql(
+            """
+            INSERT INTO document_chunks (id, source_document_id, content, page_number)
+            VALUES (?, ?, ?, ?)
+            """,
+            (chunk_id.hex, document_id.hex, 'Services revenue increased year over year.', 42),
+        )
+        session.add(ChatThread(id=thread_id, user_id=user_id, title='Phase 7'))
+        session.add(ChatMessage(id=uuid.uuid4(), thread_id=thread_id, role='user', content='What supports services growth?'))
+        session.add(
+            ChatMessage(
+                id=assistant_message_id,
+                thread_id=thread_id,
+                role='assistant',
+                content='Microsoft reported services growth.',
+            )
+        )
+        session.add(
+            MessageCitation(
+                message_id=assistant_message_id,
+                chunk_id=chunk_id,
+                source_document_id=document_id,
+                quote='Services revenue increased year over year.',
+                page_number=42,
+            )
+        )
+        session.commit()
+
+    def override_get_current_user() -> dict[str, str]:
+        return {'id': str(user_id), 'email': 'phase3@example.com'}
+
+    def override_get_db_session() -> Generator[Session, None, None]:
+        session = session_factory()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[get_db_session] = override_get_db_session
+
+    try:
+        client = TestClient(app)
+        response = client.get(f'/chat/threads/{thread_id}/messages')
+
+        assert response.status_code == 200
+        payload = response.json()
+        assistant_payload = next(item for item in payload if item['role'] == 'assistant')
+        assert len(assistant_payload['citations']) == 1
+        citation = assistant_payload['citations'][0]
+        assert citation['chunk_id'] == str(chunk_id)
+        assert citation['source_document_id'] == str(document_id)
+        assert citation['company_name'] == 'Microsoft'
+        assert citation['filing_type'] == '10-K'
+        assert citation['filing_year'] == 2024
+        assert citation['page_number'] == 42
+        assert citation['quote'] == 'Services revenue increased year over year.'
+        assert citation['excerpt'] == 'Services revenue increased year over year.'
     finally:
         app.dependency_overrides.clear()

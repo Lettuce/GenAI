@@ -152,12 +152,12 @@ Goal: grounded answers only, with enforced citation policy.
 
 Goal: move frontend streaming to AI SDK primitives and display citation-first answer UX.
 
-- [ ] Add AI SDK UI packages and switch to `useChat` + `DefaultChatTransport`
-- [ ] Keep thread sidebar and message history pre-load integrated with AI SDK in-flight state
-- [ ] Add citation chips (company, filing, date, page/section)
-- [ ] Add expandable source passage excerpts for one-click verification
-- [ ] Add grounding-specific error states (401, network, validation failure)
-- [ ] Verify full loop with cited answers and reload-safe history
+- [X] Add AI SDK UI packages and switch to `useChat` + `DefaultChatTransport`
+- [X] Keep thread sidebar and message history pre-load integrated with AI SDK in-flight state
+- [X] Add citation chips (company, filing, date, page/section)
+- [X] Add expandable source passage excerpts for one-click verification
+- [X] Add grounding-specific error states (401, network, validation failure)
+- [X] Verify full loop with cited answers and reload-safe history
 
 ---
 

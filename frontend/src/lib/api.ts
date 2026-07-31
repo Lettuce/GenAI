@@ -9,12 +9,27 @@ export interface ChatThread {
   created_at: string
 }
 
+export interface MessageCitation {
+  chunk_id: string
+  source_document_id: string
+  quote: string | null
+  page_number: number | null
+  excerpt: string | null
+  ticker: string | null
+  company_name: string | null
+  filing_type: string | null
+  filing_year: number | null
+  filing_date: string | null
+  source_url: string | null
+}
+
 export interface ChatMessage {
   id: string
   thread_id: string
   role: 'user' | 'assistant'
   content: string
   created_at: string
+  citations: MessageCitation[]
 }
 
 export async function signUp(email: string, password: string) {
@@ -47,6 +62,13 @@ export async function createThread(title?: string) {
   return requestJson<ChatThread>('/chat/threads', {
     method: 'POST',
     body: JSON.stringify({ title: title ?? null }),
+  })
+}
+
+export async function updateThreadTitle(threadId: string, title: string | null) {
+  return requestJson<ChatThread>(`/chat/threads/${threadId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
   })
 }
 

@@ -112,3 +112,55 @@ def test_hybrid_retriever_orchestrates_rrf_pipeline(monkeypatch) -> None:
     assert len(passages) == 1
     assert passages[0].ticker == "MSFT"
     assert call_log == ["embed", "semantic", "lexical", "fusion", "passages"]
+
+
+def test_hybrid_retriever_falls_back_to_lexical_when_embedding_fails(monkeypatch) -> None:
+    db = _FakeSession()
+    embedding_client = _FakeClient()
+
+    call_log: list[str] = []
+
+    def _failing_embed_query(query: str, client: object) -> list[float]:
+        call_log.append("embed")
+        raise RuntimeError("rate limit")
+
+    def _fake_semantic_search(**kwargs) -> list[RankedChunkCandidate]:
+        call_log.append("semantic")
+        return []
+
+    def _fake_lexical_search(db_session: object, *, query_text: str, limit: int, filters: object) -> list[RankedChunkCandidate]:
+        call_log.append("lexical")
+        assert db_session is db
+        assert query_text == "services growth"
+        assert limit == 30
+        assert filters is None
+        return []
+
+    def _fake_fuse(*, semantic_candidates: list[RankedChunkCandidate], lexical_candidates: list[RankedChunkCandidate], rrf_k: int, limit: int) -> list[FusedChunkCandidate]:
+        call_log.append("fusion")
+        assert semantic_candidates == []
+        assert lexical_candidates == []
+        assert rrf_k == 60
+        assert limit == 8
+        return []
+
+    def _fake_build_passages(db_session: object, fused_candidates: list[FusedChunkCandidate], *, neighbor_window: int) -> list[RetrievedPassage]:
+        call_log.append("passages")
+        assert db_session is db
+        assert fused_candidates == []
+        assert neighbor_window == 1
+        return []
+
+    monkeypatch.setattr("app.retrieval.retriever.embed_query", _failing_embed_query)
+    monkeypatch.setattr("app.retrieval.retriever.semantic_search", _fake_semantic_search)
+    monkeypatch.setattr("app.retrieval.retriever.lexical_search", _fake_lexical_search)
+    monkeypatch.setattr("app.retrieval.retriever.fuse_ranked_candidates", _fake_fuse)
+    monkeypatch.setattr("app.retrieval.retriever.build_passages", _fake_build_passages)
+
+    retriever = HybridRetriever(db, embedding_client=embedding_client)
+
+    passages = retriever.retrieve("services growth")
+
+    assert passages == []
+    # No semantic call is made when embeddings fail, but lexical retrieval still executes.
+    assert call_log == ["embed", "lexical", "fusion", "passages"]

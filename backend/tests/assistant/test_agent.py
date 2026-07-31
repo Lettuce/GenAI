@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import types
 import uuid
 
@@ -45,7 +46,7 @@ def test_grounded_agent_returns_refusal_when_no_passages() -> None:
         retriever=_FakeRetriever(passages=[]),
     )
 
-    answer = agent.answer(user_query="What drove services growth?", deps=deps)
+    answer = asyncio.run(agent.answer(user_query="What drove services growth?", deps=deps))
 
     assert answer.insufficient_evidence is True
     assert answer.citations == []
@@ -71,12 +72,17 @@ def test_grounded_agent_accepts_structured_model_output() -> None:
         ],
         insufficient_evidence=False,
     )
-    agent._run_sync = lambda prompt, deps: types.SimpleNamespace(output=fake_output)
+    async def _fake_run(prompt: str, deps: AssistantRuntimeDeps) -> object:
+        return types.SimpleNamespace(output=fake_output)
 
-    answer = agent.answer(
-        user_query="What drove services growth?",
-        deps=deps,
-        retrieved_passages=passages,
+    agent._run = _fake_run
+
+    answer = asyncio.run(
+        agent.answer(
+            user_query="What drove services growth?",
+            deps=deps,
+            retrieved_passages=passages,
+        )
     )
 
     assert answer.insufficient_evidence is False

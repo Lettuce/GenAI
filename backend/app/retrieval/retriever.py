@@ -38,13 +38,18 @@ class HybridRetriever:
     def retrieve(self, query: str, *, filters: RetrievalFilters | None = None) -> list[RetrievedPassage]:
         semantic_candidates = []
         if self._semantic_limit > 0:
-            query_embedding = self._embedding_fn(query, self._embedding_client)
-            semantic_candidates = semantic_search(
-                self._db,
-                query_embedding=query_embedding,
-                limit=self._semantic_limit,
-                filters=filters,
-            )
+            try:
+                query_embedding = self._embedding_fn(query, self._embedding_client)
+            except Exception:
+                query_embedding = None
+
+            if query_embedding is not None:
+                semantic_candidates = semantic_search(
+                    self._db,
+                    query_embedding=query_embedding,
+                    limit=self._semantic_limit,
+                    filters=filters,
+                )
         lexical_candidates = lexical_search(
             self._db,
             query_text=query,

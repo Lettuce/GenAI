@@ -4,6 +4,7 @@ import { useChat } from '@ai-sdk/react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { MessageComposer } from '../../components/chat/MessageComposer'
+import type { DisplayCitation } from '../../components/chat/MessageList'
 import type { DisplayMessage } from '../../components/chat/MessageList'
 import { MessageList } from '../../components/chat/MessageList'
 import { ThreadSidebar } from '../../components/chat/ThreadSidebar'
@@ -13,6 +14,7 @@ import {
   createThread,
   listThreadMessages,
   listThreads,
+  updateThreadTitle,
   type ChatThread,
 } from '../../lib/api'
 
@@ -25,6 +27,7 @@ export function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [creatingThread, setCreatingThread] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [citationsByMessageId, setCitationsByMessageId] = useState<Record<string, DisplayCitation[]>>({})
 
   const activeThreadId = params.threadId ?? null
 
@@ -55,12 +58,17 @@ export function ChatPage() {
     setLoadingMessages(true)
     try {
       const nextMessages = await listThreadMessages(threadId)
+      const nextCitationsByMessageId: Record<string, DisplayCitation[]> = {}
       const nextUiMessages: UIMessage[] = nextMessages.map((message) => ({
         id: message.id,
         role: message.role,
         parts: [{ type: 'text', text: message.content }],
       }))
+      for (const message of nextMessages) {
+        nextCitationsByMessageId[message.id] = message.citations
+      }
       setUiMessages(nextUiMessages)
+      setCitationsByMessageId(nextCitationsByMessageId)
     } catch (err) {
       if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setUiMessages([])
@@ -90,12 +98,63 @@ export function ChatPage() {
           id: message.id,
           role: message.role,
           content,
+          citations: citationsByMessageId[message.id] ?? [],
         }
       })
-  }, [uiMessages])
+  }, [citationsByMessageId, uiMessages])
 
   const isStreaming = status === 'submitted' || status === 'streaming'
   const displayError = error ?? chatError?.message ?? null
+
+  const progressStage = useMemo<'Analyzing' | 'Searching' | 'Reading' | 'Verifying' | 'Answering' | null>(() => {
+    if (!isStreaming) {
+      return null
+    }
+
+    if (status === 'submitted') {
+      return 'Analyzing'
+    }
+
+    const assistantMessages = displayMessages.filter((message) => message.role === 'assistant')
+    const latestAssistant = assistantMessages.at(-1)?.content ?? ''
+
+    if (latestAssistant.includes('Answering')) {
+      return 'Answering'
+    }
+    if (latestAssistant.includes('Verifying')) {
+      return 'Verifying'
+    }
+    if (latestAssistant.includes('Reading')) {
+      return 'Reading'
+    }
+    if (latestAssistant.includes('Searching')) {
+      return 'Searching'
+    }
+    return 'Analyzing'
+  }, [displayMessages, isStreaming, status])
+
+  const progressPercent = useMemo(() => {
+    if (!isStreaming) {
+      return 0
+    }
+
+    if (progressStage === 'Analyzing') {
+      return status === 'submitted' ? 12 : 18
+    }
+    if (progressStage === 'Searching') {
+      return 34
+    }
+    if (progressStage === 'Reading') {
+      return 56
+    }
+    if (progressStage === 'Verifying') {
+      return 78
+    }
+    if (progressStage === 'Answering') {
+      return 92
+    }
+    return 10
+  }, [isStreaming, progressStage, status])
 
   useEffect(() => {
     let mounted = true
@@ -172,15 +231,35 @@ export function ChatPage() {
         },
       )
       await loadMessages(threadId)
+      await refreshThreads()
     } catch (err) {
+      const fallbackMessage = err instanceof Error ? err.message : 'Failed to stream response'
+      const message = fallbackMessage.toLowerCase()
+
       if (err instanceof ApiError && err.status === 401) {
-        setError('Your session expired. Please sign in again.')
+        setError('Authentication error: your session expired. Please sign in again.')
       } else if (err instanceof ApiError && (err.status === 403 || err.status === 404)) {
         setError('This thread is not available.')
         navigate('/chat', { replace: true })
+      } else if (err instanceof ApiError && err.status === 422) {
+        setError('Validation error: the grounding output failed validation. Please retry your prompt.')
+      } else if (message.includes('network') || message.includes('failed to fetch') || message.includes('stream')) {
+        setError('Network error: unable to reach the chat service. Check your connection and retry.')
+      } else if (message.includes('validation') || message.includes('grounding')) {
+        setError('Validation error: the model response could not be grounded to citations. Try rephrasing.')
       } else {
-        setError(err instanceof Error ? err.message : 'Failed to stream response')
+        setError(fallbackMessage)
       }
+    }
+  }
+
+  async function handleRenameThread(threadId: string, title: string) {
+    setError(null)
+    try {
+      await updateThreadTitle(threadId, title)
+      await refreshThreads()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to rename thread')
     }
   }
 
@@ -193,6 +272,7 @@ export function ChatPage() {
         creating={creatingThread}
         onCreateThread={() => void handleCreateThread()}
         onSelectThread={(threadId) => navigate(`/chat/${threadId}`)}
+        onRenameThread={(threadId, title) => void handleRenameThread(threadId, title)}
       />
 
       <section className="flex min-w-0 flex-1 flex-col">
@@ -208,7 +288,12 @@ export function ChatPage() {
         {loadingMessages ? (
           <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Loading messages…</div>
         ) : (
-          <MessageList messages={displayMessages} isStreaming={isStreaming} />
+          <MessageList
+            messages={displayMessages}
+            isStreaming={isStreaming}
+            progressStage={progressStage}
+            progressPercent={progressPercent}
+          />
         )}
 
         <MessageComposer disabled={isStreaming} onSubmit={handleSubmitMessage} />
