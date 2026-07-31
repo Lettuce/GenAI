@@ -16,6 +16,7 @@ _FALLBACK_FILLER_WORDS = frozenset({
     "of",
     "on",
     "or",
+    "over",
     "that",
     "the",
     "this",
@@ -27,7 +28,8 @@ _FALLBACK_FILLER_WORDS = frozenset({
 
 def _get_stopwords() -> frozenset[str]:
     try:
-        return frozenset(stopwords.words("english"))
+        stopword_set = frozenset(stopwords.words("english"))
+        return stopword_set | _FALLBACK_FILLER_WORDS
     except LookupError:
         return _FALLBACK_FILLER_WORDS
 
