@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.assistant.tools import build_fts_query_terms
 from app.database.models.document_chunk import DocumentChunk
 from app.database.models.source_document import SourceDocument
+from app.retrieval.keywords import build_keyword_query_terms
 from app.retrieval.types import RankedChunkCandidate, RetrievalFilters
 
 
@@ -81,7 +82,10 @@ def lexical_search(
 
     ts_query_terms = _build_fts_query_terms(trimmed_query)
     if not ts_query_terms:
-        return []
+        keyword_terms = build_keyword_query_terms(trimmed_query)
+        if not keyword_terms:
+            return []
+        ts_query_terms = keyword_terms
 
     ts_query = func.to_tsquery("english", ts_query_terms)
     rank_expr = func.ts_rank_cd(DocumentChunk.search_vector, ts_query)

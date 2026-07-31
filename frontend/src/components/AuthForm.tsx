@@ -66,7 +66,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required
-          className="w-full rounded border border-slate-300 px-3 py-2"
+          className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-500"
         />
       </div>
 
@@ -78,7 +78,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           onChange={(event) => setPassword(event.target.value)}
           required
           minLength={6}
-          className="w-full rounded border border-slate-300 px-3 py-2"
+          className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-slate-900 placeholder:text-slate-500"
         />
       </div>
 

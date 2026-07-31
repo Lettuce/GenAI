@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import json
+import uuid
 from pathlib import Path
 from typing import Callable
 
 from pydantic_ai import Agent, RunContext
+from sqlalchemy.orm import Session
 
 from app.assistant.deps import AssistantRuntimeDeps
 from app.assistant.depths import DEPTH_CONFIG, SearchDepth
 from app.assistant.outputs import AssistantSearchPlan, AssistantSearchResult, GroundedAnswer, SourcePassage
 from app.assistant.progress import AssistantProgressTracker
 from app.assistant.tools import build_fts_query_terms, extract_search_terms
+from app.database import documents
 from app.retrieval.types import RetrievedPassage
 from app.schemas.config import settings
 
@@ -43,6 +46,102 @@ def _to_source_passage(passage: RetrievedPassage) -> SourcePassage:
     )
 
 
+def _to_source_passage_from_row(row: documents.PassageRow) -> SourcePassage:
+    return SourcePassage(
+        chunk_id=str(row.chunk_id),
+        document_id=str(row.source_document_id),
+        content=row.content,
+        page_number=row.page_number,
+        ticker=row.ticker,
+        company_name=row.company_name,
+        filing_type=row.filing_type,
+        filing_year=row.filing_year,
+        filing_date=row.filing_date_iso,
+        accession_number=row.accession_number,
+        source_url=row.source_url,
+    )
+
+
+def _get_retriever_db_session(deps: AssistantRuntimeDeps) -> Session:
+    db = getattr(deps.retriever, "_db", None)
+    if not isinstance(db, Session):
+        raise RuntimeError("Retriever does not expose a SQLAlchemy session for chunk reads")
+    return db
+
+
+def _parse_chunk_ids(chunk_ids: list[str]) -> list[uuid.UUID]:
+    parsed_ids: list[uuid.UUID] = []
+    for chunk_id in chunk_ids:
+        try:
+            parsed_ids.append(uuid.UUID(chunk_id))
+        except ValueError as exc:
+            raise ValueError(f"Invalid chunk_id: {chunk_id}") from exc
+    return parsed_ids
+
+
+def getDocumentAgent(*, model_name: str | None = None) -> Agent[AssistantRuntimeDeps, GroundedAnswer]:
+    configured_model = model_name or settings.chat_model
+    if ":" not in configured_model:
+        configured_model = f"openai-chat:{configured_model}"
+
+    agent = Agent(
+        model=configured_model,
+        output_type=GroundedAnswer,
+        deps_type=AssistantRuntimeDeps,
+        instructions=_load_instructions(),
+        retries=1,
+        name="document-copilot-grounded-agent",
+        tool_timeout=20.0,
+    )
+
+    @agent.tool
+    async def search_filings(ctx: RunContext[AssistantRuntimeDeps], query: str) -> list[SourcePassage]:
+        retrieved = ctx.deps.retriever.retrieve(query, filters=ctx.deps.filters)
+        return [_to_source_passage(passage) for passage in retrieved]
+
+    @agent.tool
+    async def read_chunks(ctx: RunContext[AssistantRuntimeDeps], chunk_ids: list[str]) -> list[SourcePassage]:
+        if not chunk_ids:
+            return []
+        db = _get_retriever_db_session(ctx.deps)
+        parsed_chunk_ids = _parse_chunk_ids(chunk_ids)
+        rows = documents.get_passage_rows(db, parsed_chunk_ids)
+        return [_to_source_passage_from_row(row) for row in rows]
+
+    @agent.tool
+    async def read_chunk(ctx: RunContext[AssistantRuntimeDeps], chunk_id: str) -> SourcePassage | None:
+        chunks = await read_chunks(ctx, [chunk_id])
+        return chunks[0] if chunks else None
+
+    @agent.tool
+    async def read_surrounding_chunks(
+        ctx: RunContext[AssistantRuntimeDeps],
+        chunk_id: str,
+        window: int = 1,
+    ) -> list[SourcePassage]:
+        parsed_chunk_id = _parse_chunk_ids([chunk_id])[0]
+        db = _get_retriever_db_session(ctx.deps)
+        neighbor_rows_by_seed = documents.get_neighbor_passage_rows(
+            db,
+            seed_chunk_ids=[parsed_chunk_id],
+            window=max(1, window),
+        )
+        neighbor_rows = neighbor_rows_by_seed.get(parsed_chunk_id, [])
+        if not neighbor_rows:
+            return []
+
+        neighbor_ids = [neighbor.chunk_id for neighbor in neighbor_rows]
+        rows = documents.get_passage_rows(db, neighbor_ids)
+        return [_to_source_passage_from_row(row) for row in rows]
+
+    # Backward-compatible tool alias used by the current system prompt and call path.
+    @agent.tool
+    async def search_passages(ctx: RunContext[AssistantRuntimeDeps], query: str) -> list[SourcePassage]:
+        return await search_filings(ctx, query)
+
+    return agent
+
+
 class AssistantSearchAgent:
     def build_plan(self, query: str, *, depth: SearchDepth = SearchDepth.STANDARD) -> AssistantSearchPlan:
         config = DEPTH_CONFIG[depth]
@@ -66,24 +165,8 @@ class AssistantSearchAgent:
 
 class GroundedAssistantAgent:
     def __init__(self, *, model_name: str | None = None) -> None:
-        configured_model = model_name or settings.chat_model
-        if ":" not in configured_model:
-            configured_model = f"openai-chat:{configured_model}"
-
-        self._agent = Agent(
-            model=configured_model,
-            output_type=GroundedAnswer,
-            deps_type=AssistantRuntimeDeps,
-            instructions=_load_instructions(),
-            retries=1,
-            name="document-copilot-grounded-agent",
-            tool_timeout=20.0,
-        )
+        self._agent = getDocumentAgent(model_name=model_name)
         self._run_sync: Callable[..., object] = self._agent.run_sync
-
-        @self._agent.tool
-        async def search_passages(ctx: RunContext[AssistantRuntimeDeps], query: str) -> list[SourcePassage]:
-            return self.retrieve_passages(ctx.deps, query)
 
     @staticmethod
     def retrieve_passages(deps: AssistantRuntimeDeps, query: str) -> list[SourcePassage]:

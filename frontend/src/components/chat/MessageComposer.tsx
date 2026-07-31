@@ -27,7 +27,7 @@ export function MessageComposer({ disabled, onSubmit }: MessageComposerProps) {
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder="Ask about the filing corpus..."
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-500"
           disabled={disabled}
         />
         <button
