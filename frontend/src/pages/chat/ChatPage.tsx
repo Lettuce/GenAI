@@ -4,6 +4,7 @@ import { useChat } from '@ai-sdk/react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { MessageComposer } from '../../components/chat/MessageComposer'
+import { CitationDetailPanel } from '../../components/chat/CitationDetailPanel'
 import type { DisplayCitation } from '../../components/chat/MessageList'
 import type { DisplayMessage } from '../../components/chat/MessageList'
 import { MessageList } from '../../components/chat/MessageList'
@@ -12,11 +13,87 @@ import { createChatTransport } from '../../lib/chatTransport'
 import {
   ApiError,
   createThread,
+  deleteThread,
   listThreadMessages,
   listThreads,
   updateThreadTitle,
   type ChatThread,
 } from '../../lib/api'
+
+function tokenize(text: string): Set<string> {
+  const tokens = text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3)
+  return new Set(tokens)
+}
+
+function sentenceCandidates(text: string): string[] {
+  const normalized = text.replace(/\r\n/g, '\n').trim()
+  if (!normalized) {
+    return []
+  }
+
+  return normalized
+    .split(/(?<=[.!?])\s+|\n+/)
+    .map((sentence) => sentence.trim())
+    .filter((sentence) => sentence.length > 0)
+}
+
+function overlapScore(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) {
+    return 0
+  }
+
+  let overlap = 0
+  for (const token of a) {
+    if (b.has(token)) {
+      overlap += 1
+    }
+  }
+
+  return overlap
+}
+
+function pickBestCitation(content: string, citations: DisplayCitation[]): DisplayCitation {
+  if (citations.length === 1) {
+    return citations[0]
+  }
+
+  const sentences = sentenceCandidates(content)
+  const sentenceTokenSets = sentences.map((sentence) => tokenize(sentence)).filter((set) => set.size > 0)
+
+  let bestCitation = citations[0]
+  let bestScore = -1
+
+  for (const citation of citations) {
+    const citationText = citation.quote || citation.excerpt || ''
+    const citationTokens = tokenize(citationText)
+    let citationBest = 0
+
+    for (const sentenceTokens of sentenceTokenSets) {
+      citationBest = Math.max(citationBest, overlapScore(sentenceTokens, citationTokens))
+    }
+
+    if (citationBest > bestScore) {
+      bestScore = citationBest
+      bestCitation = citation
+      continue
+    }
+
+    if (citationBest === bestScore) {
+      const currentTextLength = (citation.quote || citation.excerpt || '').length
+      const bestTextLength = (bestCitation.quote || bestCitation.excerpt || '').length
+      if (currentTextLength > bestTextLength) {
+        bestCitation = citation
+      }
+    }
+  }
+
+  return bestCitation
+}
 
 export function ChatPage() {
   const navigate = useNavigate()
@@ -28,6 +105,19 @@ export function ChatPage() {
   const [creatingThread, setCreatingThread] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [citationsByMessageId, setCitationsByMessageId] = useState<Record<string, DisplayCitation[]>>({})
+  const [selectedCitation, setSelectedCitation] = useState<{ messageId: string; citation: DisplayCitation } | null>(null)
+  const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>(() => {
+    try {
+      const raw = window.localStorage.getItem('chatPinnedThreadIds')
+      if (!raw) {
+        return []
+      }
+      const parsed = JSON.parse(raw)
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+    } catch {
+      return []
+    }
+  })
 
   const activeThreadId = params.threadId ?? null
 
@@ -51,8 +141,13 @@ export function ChatPage() {
   const refreshThreads = useCallback(async () => {
     const nextThreads = await listThreads()
     setThreads(nextThreads)
+    setPinnedThreadIds((current) => current.filter((threadId) => nextThreads.some((thread) => thread.id === threadId)))
     return nextThreads
   }, [])
+
+  useEffect(() => {
+    window.localStorage.setItem('chatPinnedThreadIds', JSON.stringify(pinnedThreadIds))
+  }, [pinnedThreadIds])
 
   const loadMessages = useCallback(async (threadId: string) => {
     setLoadingMessages(true)
@@ -102,6 +197,15 @@ export function ChatPage() {
         }
       })
   }, [citationsByMessageId, uiMessages])
+
+  const citationsForSelectedMessage = useMemo(() => {
+    if (!selectedCitation) {
+      return []
+    }
+
+    const message = displayMessages.find((item) => item.id === selectedCitation.messageId)
+    return message?.citations ?? []
+  }, [displayMessages, selectedCitation])
 
   const isStreaming = status === 'submitted' || status === 'streaming'
   const displayError = error ?? chatError?.message ?? null
@@ -191,6 +295,20 @@ export function ChatPage() {
     }
   }, [loadMessages, navigate, params.threadId, refreshThreads])
 
+  useEffect(() => {
+    if (!selectedCitation) {
+      return
+    }
+
+    const stillExists = displayMessages.some((message) =>
+      message.id === selectedCitation.messageId && message.citations.some((citation) => citation.chunk_id === selectedCitation.citation.chunk_id),
+    )
+
+    if (!stillExists) {
+      setSelectedCitation(null)
+    }
+  }, [displayMessages, selectedCitation])
+
   async function handleCreateThread() {
     setCreatingThread(true)
     setError(null)
@@ -221,17 +339,21 @@ export function ChatPage() {
       return
     }
 
-    try {
+    async function submitToThread(targetThreadId: string, targetText: string) {
       await sendMessage(
-        { text },
+        { text: targetText },
         {
           body: {
-            threadId,
+            threadId: targetThreadId,
           },
         },
       )
-      await loadMessages(threadId)
+      await loadMessages(targetThreadId)
       await refreshThreads()
+    }
+
+    try {
+      await submitToThread(threadId, text)
     } catch (err) {
       const fallbackMessage = err instanceof Error ? err.message : 'Failed to stream response'
       const message = fallbackMessage.toLowerCase()
@@ -253,6 +375,97 @@ export function ChatPage() {
     }
   }
 
+  async function handleRetryAssistantMessage(assistantMessageId: string) {
+    setError(null)
+
+    const assistantIndex = displayMessages.findIndex((message) => message.id === assistantMessageId && message.role === 'assistant')
+    if (assistantIndex < 0) {
+      setError('The selected response is no longer available to retry.')
+      return
+    }
+
+    const previousUserMessage = [...displayMessages]
+      .slice(0, assistantIndex)
+      .reverse()
+      .find((message) => message.role === 'user' && message.content.trim())
+
+    if (!previousUserMessage) {
+      setError('No previous user prompt is available to retry for this response.')
+      return
+    }
+
+    await handleSubmitMessage(previousUserMessage.content)
+  }
+
+  function handleOpenCitationsForMessage(messageId: string) {
+    setError(null)
+    const message = displayMessages.find((item) => item.id === messageId && item.role === 'assistant')
+
+    if (!message || message.citations.length === 0) {
+      setError('No stored citations were found for this response.')
+      return
+    }
+
+    const bestCitation = pickBestCitation(message.content, message.citations)
+    setSelectedCitation({ messageId: message.id, citation: bestCitation })
+  }
+
+  function handleOpenCitationChunk(params: { messageId: string; chunkId: string }) {
+    setError(null)
+    const message = displayMessages.find((item) => item.id === params.messageId && item.role === 'assistant')
+    const citation = message?.citations.find((item) => item.chunk_id === params.chunkId)
+
+    if (!message || !citation) {
+      setError('The selected source chunk is no longer available.')
+      return
+    }
+
+    setSelectedCitation({ messageId: message.id, citation })
+  }
+
+  async function handleDeleteThread(threadId: string) {
+    setError(null)
+    try {
+      await deleteThread(threadId)
+      setPinnedThreadIds((current) => current.filter((id) => id !== threadId))
+
+      if (activeThreadId === threadId) {
+        setUiMessages([])
+        setCitationsByMessageId({})
+        setSelectedCitation(null)
+      }
+
+      const nextThreads = await refreshThreads()
+      const stillPresent = nextThreads.some((thread) => thread.id === threadId)
+      if (stillPresent) {
+        throw new Error('Delete did not complete. Please retry.')
+      }
+
+      if (nextThreads.length === 0) {
+        setUiMessages([])
+        setCitationsByMessageId({})
+        setSelectedCitation(null)
+        navigate('/chat', { replace: true })
+        return
+      }
+
+      if (activeThreadId === threadId) {
+        navigate(`/chat/${nextThreads[0].id}`, { replace: true })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete chat')
+    }
+  }
+
+  function handleTogglePinThread(threadId: string) {
+    setPinnedThreadIds((current) => {
+      if (current.includes(threadId)) {
+        return current.filter((id) => id !== threadId)
+      }
+      return [threadId, ...current]
+    })
+  }
+
   async function handleRenameThread(threadId: string, title: string) {
     setError(null)
     try {
@@ -264,18 +477,21 @@ export function ChatPage() {
   }
 
   return (
-    <main className="flex min-h-[calc(100vh-4rem)] bg-slate-50">
+    <main className="flex h-[calc(100vh-4rem)] overflow-hidden bg-slate-50">
       <ThreadSidebar
         threads={threads}
         activeThreadId={activeThreadId}
+        pinnedThreadIds={pinnedThreadIds}
         loading={loadingThreads}
         creating={creatingThread}
         onCreateThread={() => void handleCreateThread()}
         onSelectThread={(threadId) => navigate(`/chat/${threadId}`)}
         onRenameThread={(threadId, title) => void handleRenameThread(threadId, title)}
+        onTogglePinThread={handleTogglePinThread}
+        onDeleteThread={(threadId) => void handleDeleteThread(threadId)}
       />
 
-      <section className="flex min-w-0 flex-1 flex-col">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="border-b border-slate-200 bg-white px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">{hasActiveThread ? 'Chat Thread' : 'New Chat'}</h2>
           <p className="text-xs text-slate-500">FastAPI stub stream with persisted history</p>
@@ -285,19 +501,28 @@ export function ChatPage() {
           <div className="border-b border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">{displayError}</div>
         ) : null}
 
-        {loadingMessages ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-slate-500">Loading messages…</div>
-        ) : (
-          <MessageList
-            messages={displayMessages}
-            isStreaming={isStreaming}
-            progressStage={progressStage}
-            progressPercent={progressPercent}
-          />
-        )}
+        <div className="min-h-0 flex-1">
+          {loadingMessages ? (
+            <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading messages…</div>
+          ) : (
+            <MessageList
+              messages={displayMessages}
+              isStreaming={isStreaming}
+              progressStage={progressStage}
+              progressPercent={progressPercent}
+              selectedCitationId={selectedCitation ? `${selectedCitation.messageId}:${selectedCitation.citation.chunk_id}` : null}
+              onCitationSelect={setSelectedCitation}
+              onRetryAssistantMessage={(messageId) => void handleRetryAssistantMessage(messageId)}
+              onOpenCitationsForMessage={handleOpenCitationsForMessage}
+              onOpenCitationChunk={handleOpenCitationChunk}
+            />
+          )}
+        </div>
 
         <MessageComposer disabled={isStreaming} onSubmit={handleSubmitMessage} />
       </section>
+
+      <CitationDetailPanel selection={selectedCitation} citationsForMessage={citationsForSelectedMessage} />
     </main>
   )
 }

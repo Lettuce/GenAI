@@ -49,7 +49,21 @@ You also need accounts/keys for external services once the app is wired up. Star
 
 ## Running locally
 
-To be added during the build. Setup guides:
+Recommended quick-start from repo root:
+
+```bash
+pnpm install:frontend
+pnpm dev
+```
+
+In a second terminal:
+
+```bash
+pnpm sync:backend
+pnpm dev:backend
+```
+
+Or run service-specific setup guides:
 
 - [Supabase](docs/guides/supabase-setup.md) — account, hosted project (dashboard or CLI)
 - [Backend](docs/guides/backend-setup.md)

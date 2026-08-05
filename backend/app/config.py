@@ -32,6 +32,7 @@ class Settings(BaseSettings):
 
     openai_api_key: str
     openai_chat_model: str = "gpt-4o"
+    openai_grounding_model: str = "gpt-4o-mini"
     llm_model: str = "gpt-4o"
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
@@ -49,6 +50,10 @@ class Settings(BaseSettings):
     @property
     def chat_model(self) -> str:
         return self.openai_chat_model
+
+    @property
+    def grounding_model(self) -> str:
+        return self.openai_grounding_model
 
     @field_validator("database_url")
     @classmethod

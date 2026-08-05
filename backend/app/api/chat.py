@@ -25,6 +25,12 @@ class ThreadResponse(BaseModel):
     created_at: str
 
 
+class NeighboringChunkResponse(BaseModel):
+    relation: str
+    excerpt: str
+    page_number: int | None
+
+
 class CitationResponse(BaseModel):
     chunk_id: str
     source_document_id: str
@@ -37,6 +43,7 @@ class CitationResponse(BaseModel):
     filing_year: int | None
     filing_date: str | None
     source_url: str | None
+    neighboring_chunks: list[NeighboringChunkResponse] = Field(default_factory=list)
 
 
 class MessageResponse(BaseModel):
@@ -125,6 +132,20 @@ async def patch_thread(
     return ThreadResponse(**updated.__dict__)
 
 
+@router.delete("/threads/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_thread(
+    thread_id: str,
+    current_user: Annotated[dict[str, Any], Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db_session)],
+) -> None:
+    user_id = _parse_user_id(current_user["id"])
+    parsed_thread_id = _parse_thread_id(thread_id)
+
+    deleted = chats.delete_thread(db, user_id=user_id, thread_id=parsed_thread_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+
 @router.get("/threads/{thread_id}/messages", response_model=list[MessageResponse])
 async def get_thread_messages(
     thread_id: str,
@@ -146,7 +167,15 @@ async def get_thread_messages(
             role=message.role,
             content=message.content,
             created_at=message.created_at,
-            citations=[CitationResponse(**citation.__dict__) for citation in message.citations],
+                citations=[
+                    CitationResponse(
+                        **{
+                            **citation.__dict__,
+                            "neighboring_chunks": [chunk.__dict__ for chunk in citation.neighboring_chunks],
+                        }
+                    )
+                    for citation in message.citations
+                ],
         )
         for message in chats.list_messages(db, user_id=user_id, thread_id=parsed_thread_id)
     ]

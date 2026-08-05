@@ -14,6 +14,11 @@ export interface DisplayCitation {
   filing_year: number | null
   filing_date: string | null
   source_url: string | null
+  neighboring_chunks: {
+    relation: 'previous' | 'next' | string
+    excerpt: string
+    page_number: number | null
+  }[]
 }
 
 export interface DisplayMessage {
@@ -28,6 +33,11 @@ interface MessageListProps {
   isStreaming: boolean
   progressStage: 'Analyzing' | 'Searching' | 'Reading' | 'Verifying' | 'Answering' | null
   progressPercent: number
+  selectedCitationId: string | null
+  onCitationSelect: (params: { messageId: string; citation: DisplayCitation } | null) => void
+  onRetryAssistantMessage: (messageId: string) => void
+  onOpenCitationsForMessage: (messageId: string) => void
+  onOpenCitationChunk: (params: { messageId: string; chunkId: string }) => void
 }
 
 interface SectionBlock {
@@ -102,9 +112,18 @@ function renderAssistantContent(content: string) {
   )
 }
 
-export function MessageList({ messages, isStreaming, progressStage, progressPercent }: MessageListProps) {
+export function MessageList({
+  messages,
+  isStreaming,
+  progressStage,
+  progressPercent,
+  selectedCitationId,
+  onCitationSelect,
+  onRetryAssistantMessage,
+  onOpenCitationsForMessage,
+  onOpenCitationChunk,
+}: MessageListProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
-  const [expandedCitationId, setExpandedCitationId] = useState<string | null>(null)
   const hasMessages = messages.length > 0
   const latestAssistantIndex = (() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -150,7 +169,7 @@ export function MessageList({ messages, isStreaming, progressStage, progressPerc
   }
 
   return (
-    <div className="flex-1 space-y-4 overflow-y-auto p-4">
+    <div className="pane-scrollbar h-full space-y-4 overflow-y-auto p-4">
       {messages.map((message, index) => (
         <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
           <div className="w-full max-w-3xl space-y-2">
@@ -161,56 +180,123 @@ export function MessageList({ messages, isStreaming, progressStage, progressPerc
             >
               {message.role === 'assistant' ? renderAssistantContent(message.content) : <p className="whitespace-pre-wrap">{message.content}</p>}
 
-              {message.role === 'assistant' && message.citations.length > 0 ? (
-                <div className="mt-3 space-y-2">
-                  <p className="text-xs font-semibold text-slate-600">Citations</p>
-                  <div className="flex flex-wrap gap-2">
-                    {message.citations.map((citation) => {
-                      const citationId = `${message.id}:${citation.chunk_id}`
-                      const isExpanded = expandedCitationId === citationId
-                      const titleParts = [
-                        citation.company_name || citation.ticker || 'Source',
-                        citation.filing_type || null,
-                        citation.filing_year ? String(citation.filing_year) : null,
-                      ].filter(Boolean)
-                      const chipLabel = titleParts.join(' - ') || 'Source'
-                      const pageLabel = citation.page_number ? `p.${citation.page_number}` : 'page n/a'
+              {message.role === 'assistant' ? (
+                <section className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold tracking-wide text-slate-700 uppercase">Source Citations</p>
+                    <button
+                      type="button"
+                      onClick={() => onOpenCitationsForMessage(message.id)}
+                      disabled={message.citations.length === 0}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Open In Source Explorer
+                    </button>
+                  </div>
 
-                      return (
-                        <div key={citationId} className="w-full">
+                  {message.citations.length === 0 ? (
+                    <p className="text-xs text-slate-500">No source citations were attached to this response.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {message.citations.map((citation, citationIndex) => {
+                        const citationId = `${message.id}:${citation.chunk_id}`
+                        const isSelected = selectedCitationId === citationId
+                        const sourceName = citation.company_name || citation.ticker || 'Source'
+                        const filingBits = [citation.filing_type || null, citation.filing_year ? String(citation.filing_year) : null]
+                          .filter(Boolean)
+                          .join(' ')
+                        const pageLabel = citation.page_number ? `Page ${citation.page_number}` : 'Page n/a'
+                        const excerpt = citation.quote || citation.excerpt || 'No excerpt available.'
+
+                        return (
                           <button
+                            key={`${message.id}:citation-row:${citation.chunk_id}`}
                             type="button"
-                            onClick={() => setExpandedCitationId(isExpanded ? null : citationId)}
-                            className="inline-flex max-w-full items-center rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                            onClick={() => onCitationSelect(isSelected ? null : { messageId: message.id, citation })}
+                            className={`w-full rounded-md border px-2 py-2 text-left transition-colors ${
+                              isSelected
+                                ? 'border-slate-900 bg-slate-900 text-white'
+                                : 'border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100'
+                            }`}
                           >
-                            <span className="truncate">{chipLabel}</span>
-                            <span className="ml-2 text-slate-500">{pageLabel}</span>
-                          </button>
-
-                          {isExpanded ? (
-                            <div className="mt-2 rounded-md border border-slate-200 bg-white p-3 text-xs text-slate-700">
-                              <p className="whitespace-pre-wrap leading-5">{citation.quote || citation.excerpt || 'No excerpt available.'}</p>
-                              {citation.source_url ? (
-                                <a
-                                  href={citation.source_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="mt-2 inline-block text-slate-600 underline"
-                                >
-                                  Open source filing
-                                </a>
-                              ) : null}
+                            <div className="flex items-center justify-between">
+                              <p className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-slate-800'}`}>
+                                [{citationIndex + 1}] {sourceName}
+                              </p>
+                              <p className={`text-[11px] ${isSelected ? 'text-slate-200' : 'text-slate-500'}`}>{pageLabel}</p>
                             </div>
-                          ) : null}
-                        </div>
+                            <p className={`mt-1 text-[11px] ${isSelected ? 'text-slate-100' : 'text-slate-600'}`}>
+                              {filingBits || 'Filing metadata unavailable'}
+                            </p>
+                            <p className={`mt-1 line-clamp-2 text-xs ${isSelected ? 'text-slate-100' : 'text-slate-700'}`}>
+                              {excerpt}
+                            </p>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </section>
+              ) : null}
+
+              {message.role === 'assistant' && message.citations.length > 0 ? (
+                <section className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-xs font-semibold tracking-wide text-slate-700 uppercase">Source Chunks</p>
+                    <button
+                      type="button"
+                      onClick={() => onOpenCitationsForMessage(message.id)}
+                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Open In Source Explorer
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {message.citations.map((citation, citationIndex) => {
+                      const chunkLabel = `Chunk ${citationIndex + 1}`
+                      const pageLabel = citation.page_number ? `p.${citation.page_number}` : 'page n/a'
+                      const title = citation.company_name || citation.ticker || 'Source'
+                      return (
+                        <button
+                          key={`${message.id}:chunk-list:${citation.chunk_id}`}
+                          type="button"
+                          onClick={() => onOpenCitationChunk({ messageId: message.id, chunkId: citation.chunk_id })}
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+                          title={`${title} ${pageLabel}`}
+                        >
+                          <span className="font-medium text-slate-800">{chunkLabel}</span>
+                          <span className="text-slate-500">{pageLabel}</span>
+                        </button>
                       )
                     })}
                   </div>
-                </div>
+                </section>
               ) : null}
 
               {message.role === 'assistant' ? (
-                <div className="mt-3 flex justify-end">
+                <div className="mt-3 flex flex-wrap justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onOpenCitationsForMessage(message.id)}
+                    disabled={message.citations.length === 0}
+                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Cite sources used in this response"
+                    title={message.citations.length > 0 ? 'Cite Sources' : 'No sources available for this response'}
+                  >
+                    <span>Cite Sources</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => onRetryAssistantMessage(message.id)}
+                    disabled={isStreaming}
+                    className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Retry this prompt"
+                    title="Retry prompt"
+                  >
+                    <span>Retry Prompt</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => void copyMessageContent(message.id, message.content)}

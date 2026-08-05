@@ -12,6 +12,14 @@ uv sync --group dev
 ## Run locally
 Start the app in development mode:
 
+From repo root:
+
+```bash
+uv --directory backend run uvicorn app.main:app --reload
+```
+
+From `backend/`:
+
 ```bash
 uv run uvicorn app.main:app --reload
 ```

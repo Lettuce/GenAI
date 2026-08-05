@@ -60,7 +60,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
       </div>
 
       <div className="space-y-2">
-        <label className="block text-sm font-medium">Email</label>
+        <label className="block text-sm font-medium text-slate-900">Email</label>
         <input
           type="email"
           value={email}
@@ -71,7 +71,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
       </div>
 
       <div className="space-y-2">
-        <label className="block text-sm font-medium">Password</label>
+        <label className="block text-sm font-medium text-slate-900">Password</label>
         <input
           type="password"
           value={password}

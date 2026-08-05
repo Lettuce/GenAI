@@ -15,6 +15,15 @@ pnpm dlx shadcn@latest init
 
 ## Run
 
+From repo root (recommended):
+
+```bash
+pnpm --dir frontend install
+pnpm --dir frontend dev
+```
+
+Or from `frontend/`:
+
 ```bash
 cd frontend
 pnpm install

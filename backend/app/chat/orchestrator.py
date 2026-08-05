@@ -13,6 +13,7 @@ from app.database import chats
 from app.database.chats import CitationWrite
 from app.grounding.validator import GroundingValidationError, GroundingValidator
 from app.retrieval.retriever import HybridRetriever
+from app.schemas.config import settings
 
 
 def _fallback_refusal(reason: str) -> GroundedAnswer:
@@ -72,15 +73,7 @@ def _recover_answer_with_retrieved_citations(
     if answer.citations:
         return answer
 
-    recovered_citations = [
-        Citation(
-            chunk_id=passage.chunk_id,
-            document_id=passage.document_id,
-            quote=passage.content[:320],
-            page_number=passage.page_number,
-        )
-        for passage in retrieved_passages[:3]
-    ]
+    recovered_citations = _citations_from_retrieved_passages(retrieved_passages)
     if not recovered_citations:
         return answer
 
@@ -92,13 +85,61 @@ def _recover_answer_with_retrieved_citations(
     )
 
 
+def _citations_from_retrieved_passages(retrieved_passages: list[SourcePassage]) -> list[Citation]:
+    deduped: list[Citation] = []
+    seen: set[tuple[str, str]] = set()
+
+    for passage in retrieved_passages:
+        key = (passage.chunk_id, passage.document_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(
+            Citation(
+                chunk_id=passage.chunk_id,
+                document_id=passage.document_id,
+                quote=passage.content[:320],
+                page_number=passage.page_number,
+            )
+        )
+
+    return deduped
+
+
+def _citations_for_persistence(*, answer: GroundedAnswer, retrieved_passages: list[SourcePassage]) -> list[Citation]:
+    merged: list[Citation] = []
+    seen: set[tuple[str, str]] = set()
+
+    for citation in answer.citations:
+        key = (citation.chunk_id, citation.document_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(citation)
+
+    for citation in _citations_from_retrieved_passages(retrieved_passages):
+        key = (citation.chunk_id, citation.document_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(citation)
+
+    return merged
+
+
 def _citation_writes(answer: GroundedAnswer) -> list[CitationWrite]:
     citation_rows: list[CitationWrite] = []
     for citation in answer.citations:
+        try:
+            parsed_chunk_id = uuid.UUID(citation.chunk_id)
+            parsed_document_id = uuid.UUID(citation.document_id)
+        except ValueError:
+            continue
+
         citation_rows.append(
             CitationWrite(
-                chunk_id=uuid.UUID(citation.chunk_id),
-                source_document_id=uuid.UUID(citation.document_id),
+                chunk_id=parsed_chunk_id,
+                source_document_id=parsed_document_id,
                 quote=citation.quote,
                 page_number=citation.page_number,
             )
@@ -115,7 +156,7 @@ async def stream_grounded_turn(
 ) -> AsyncGenerator[str, None]:
     retriever = HybridRetriever(db)
     assistant_agent = GroundedAssistantAgent()
-    validator = GroundingValidator()
+    validator = GroundingValidator(model_name=settings.grounding_model)
 
     deps = AssistantRuntimeDeps(
         user_id=user_id,
@@ -140,11 +181,11 @@ async def stream_grounded_turn(
                     retrieved_passages=retrieved_passages,
                 )
                 raw_answer = await raw_answer
-                grounded = validator.validate(answer=raw_answer, retrieved_passages=retrieved_passages)
+                grounded = await validator.validate(answer=raw_answer, retrieved_passages=retrieved_passages)
             except GroundingValidationError as exc:
                 recovered = _recover_answer_with_retrieved_citations(answer=raw_answer, retrieved_passages=retrieved_passages)
                 try:
-                    grounded = validator.validate(answer=recovered, retrieved_passages=retrieved_passages)
+                    grounded = await validator.validate(answer=recovered, retrieved_passages=retrieved_passages)
                 except GroundingValidationError:
                     grounded = _fallback_refusal(f"Grounding validation failed: {exc}")
             except Exception as exc:  # Model/tool runtime errors should not produce uncited claims.
@@ -156,32 +197,37 @@ async def stream_grounded_turn(
         retrieved_passages=retrieved_passages,
     )
 
+    persisted_answer = GroundedAnswer(
+        answer_text=grounded.answer_text,
+        citations=_citations_for_persistence(answer=grounded, retrieved_passages=retrieved_passages),
+        insufficient_evidence=grounded.insufficient_evidence,
+        refusal_reason=grounded.refusal_reason,
+    )
+
     async for event in iter_ai_sdk_data_stream_events(assistant_text):
         yield event
 
     try:
-        citation_rows = _citation_writes(grounded)
+        citation_rows = _citation_writes(persisted_answer)
     except Exception:
         citation_rows = []
 
-    if citation_rows:
-        try:
-            chats.add_turn_with_citations(
-                db,
-                thread_id=thread_id,
-                user_content=user_text,
-                assistant_content=assistant_text,
-                citations=citation_rows,
-            )
-            return
-        except Exception:
-            # Keep chat usable even if citation persistence is not available (e.g., missing migration).
-            db.rollback()
-            pass
-
-    chats.add_turn_messages(
+    _, assistant_message = chats.add_turn_messages(
         db,
         thread_id=thread_id,
         user_content=user_text,
         assistant_content=assistant_text,
     )
+
+    if not citation_rows:
+        return
+
+    try:
+        chats.add_message_citations(
+            db,
+            message_id=uuid.UUID(assistant_message.id),
+            citations=citation_rows,
+        )
+    except Exception:
+        # Keep chat usable even if citation attachment is not available.
+        db.rollback()

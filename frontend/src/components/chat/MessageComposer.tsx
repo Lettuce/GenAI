@@ -21,7 +21,7 @@ export function MessageComposer({ disabled, onSubmit }: MessageComposerProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="border-t border-slate-200 p-4">
+    <form onSubmit={handleSubmit} className="shrink-0 border-t border-slate-200 bg-white p-4">
       <div className="flex gap-2">
         <input
           value={text}

@@ -1,0 +1,11 @@
+{
+  "name": "document-copilot",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --dir frontend dev",
+    "dev:frontend": "pnpm --dir frontend dev",
+    "dev:backend": "uv --directory backend run uvicorn app.main:app --reload",
+    "install:frontend": "pnpm --dir frontend install",
+    "sync:backend": "uv --directory backend sync --group dev"
+  }
+}

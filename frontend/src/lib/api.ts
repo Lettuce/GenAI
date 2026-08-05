@@ -21,6 +21,11 @@ export interface MessageCitation {
   filing_year: number | null
   filing_date: string | null
   source_url: string | null
+  neighboring_chunks: {
+    relation: 'previous' | 'next' | string
+    excerpt: string
+    page_number: number | null
+  }[]
 }
 
 export interface ChatMessage {
@@ -69,6 +74,12 @@ export async function updateThreadTitle(threadId: string, title: string | null) 
   return requestJson<ChatThread>(`/chat/threads/${threadId}`, {
     method: 'PATCH',
     body: JSON.stringify({ title }),
+  })
+}
+
+export async function deleteThread(threadId: string) {
+  return requestJson<void>(`/chat/threads/${threadId}`, {
+    method: 'DELETE',
   })
 }
 

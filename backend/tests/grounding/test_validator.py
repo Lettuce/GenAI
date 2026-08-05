@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.assistant.outputs import Citation, GroundedAnswer, SourcePassage
@@ -38,7 +40,7 @@ def test_validator_accepts_refusal_without_citations() -> None:
         refusal_reason="Missing coverage for requested detail.",
     )
 
-    validated = validator.validate(answer=answer, retrieved_passages=_passages())
+    validated = asyncio.run(validator.validate(answer=answer, retrieved_passages=_passages()))
 
     assert validated.insufficient_evidence is True
     assert validated.citations == []
@@ -49,7 +51,7 @@ def test_validator_requires_citation_for_factual_answer() -> None:
     answer = GroundedAnswer(answer_text="Apple services grew.", citations=[], insufficient_evidence=False)
 
     with pytest.raises(GroundingValidationError):
-        validator.validate(answer=answer, retrieved_passages=_passages())
+        asyncio.run(validator.validate(answer=answer, retrieved_passages=_passages()))
 
 
 def test_validator_rejects_citation_outside_retrieved_set() -> None:
@@ -66,7 +68,7 @@ def test_validator_rejects_citation_outside_retrieved_set() -> None:
     )
 
     with pytest.raises(GroundingValidationError):
-        validator.validate(answer=answer, retrieved_passages=_passages())
+        asyncio.run(validator.validate(answer=answer, retrieved_passages=_passages()))
 
 
 def test_validator_normalizes_duplicate_citations() -> None:
@@ -88,7 +90,7 @@ def test_validator_normalizes_duplicate_citations() -> None:
         insufficient_evidence=False,
     )
 
-    validated = validator.validate(answer=answer, retrieved_passages=_passages())
+    validated = asyncio.run(validator.validate(answer=answer, retrieved_passages=_passages()))
 
     assert validated.insufficient_evidence is False
     assert len(validated.citations) == 1

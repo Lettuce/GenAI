@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 
+from sqlalchemy import delete as sa_delete
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -45,6 +46,14 @@ class PersistedMessageCitation:
     filing_year: int | None
     filing_date: str | None
     source_url: str | None
+    neighboring_chunks: list["PersistedNeighborChunk"] = field(default_factory=list)
+
+
+@dataclass
+class PersistedNeighborChunk:
+    relation: str
+    excerpt: str
+    page_number: int | None
 
 
 @dataclass
@@ -67,6 +76,11 @@ class PersistedCitation:
 
 
 _AUTO_TITLE_PLACEHOLDERS = {"new chat", "thread"}
+
+
+def _ensure_message_citations_table(db: Session) -> None:
+    bind = db.get_bind()
+    MessageCitation.__table__.create(bind=bind, checkfirst=True)
 
 
 def _summarize_thread_title(user_content: str, *, max_length: int = 80) -> str:
@@ -110,6 +124,33 @@ def update_thread_title(
     db.commit()
     db.refresh(thread)
     return PersistedThread(id=str(thread.id), title=thread.title, created_at=thread.created_at.isoformat())
+
+
+def delete_thread(db: Session, *, user_id: uuid.UUID, thread_id: uuid.UUID) -> bool:
+    _ensure_message_citations_table(db)
+
+    thread = get_thread_for_user(db, user_id=user_id, thread_id=thread_id)
+    if thread is None:
+        return False
+
+    message_ids = db.execute(
+        select(ChatMessage.id).where(ChatMessage.thread_id == thread_id)
+    ).scalars().all()
+
+    if message_ids:
+        db.execute(
+            sa_delete(MessageCitation).where(MessageCitation.message_id.in_(message_ids))
+        )
+
+    db.execute(sa_delete(ChatMessage).where(ChatMessage.thread_id == thread_id))
+    db.execute(
+        sa_delete(ChatThread).where(
+            ChatThread.id == thread_id,
+            ChatThread.user_id == user_id,
+        )
+    )
+    db.commit()
+    return True
 
 
 def ensure_user(db: Session, user_id: uuid.UUID, email: str | None) -> User:
@@ -189,6 +230,39 @@ def list_messages(db: Session, user_id: uuid.UUID, thread_id: uuid.UUID) -> list
     citations_by_message_id: dict[uuid.UUID, list[PersistedMessageCitation]] = {}
 
     try:
+        _ensure_message_citations_table(db)
+
+        chunk_rows = db.execute(
+            select(
+                DocumentChunk.id,
+                DocumentChunk.source_document_id,
+                DocumentChunk.content,
+                DocumentChunk.page_number,
+                DocumentChunk.created_at,
+            )
+        ).all()
+
+        ordered_chunks_by_document_id: dict[uuid.UUID, list[tuple[uuid.UUID, str, int | None]]] = {}
+        chunk_position_by_id: dict[uuid.UUID, tuple[uuid.UUID, int]] = {}
+
+        grouped_chunks: dict[uuid.UUID, list[tuple[uuid.UUID, str, int | None, object | None]]] = {}
+        for chunk_id, source_document_id, content, page_number, created_at in chunk_rows:
+            grouped_chunks.setdefault(source_document_id, []).append((chunk_id, content, page_number, created_at))
+
+        for source_document_id, raw_chunks in grouped_chunks.items():
+            ordered_raw_chunks = sorted(
+                raw_chunks,
+                key=lambda row: (
+                    row[2] if row[2] is not None else 1_000_000_000,
+                    row[3].isoformat() if row[3] is not None else '',
+                    str(row[0]),
+                ),
+            )
+            ordered = [(chunk_id, content, page_number) for chunk_id, content, page_number, _ in ordered_raw_chunks]
+            ordered_chunks_by_document_id[source_document_id] = ordered
+            for index, (chunk_id, _, _) in enumerate(ordered):
+                chunk_position_by_id[chunk_id] = (source_document_id, index)
+
         citation_rows = db.execute(
             select(
                 MessageCitation.message_id,
@@ -212,6 +286,30 @@ def list_messages(db: Session, user_id: uuid.UUID, thread_id: uuid.UUID) -> list
 
         for row in citation_rows:
             filing_date_iso = row[10].isoformat() if row[10] is not None else None
+            neighboring_chunks: list[PersistedNeighborChunk] = []
+            chunk_position = chunk_position_by_id.get(row[1])
+            if chunk_position is not None:
+                source_document_id, chunk_index = chunk_position
+                ordered_chunks = ordered_chunks_by_document_id.get(source_document_id, [])
+                previous_chunk = ordered_chunks[chunk_index - 1] if chunk_index - 1 >= 0 else None
+                next_chunk = ordered_chunks[chunk_index + 1] if chunk_index + 1 < len(ordered_chunks) else None
+                if previous_chunk is not None:
+                    neighboring_chunks.append(
+                        PersistedNeighborChunk(
+                            relation="previous",
+                            excerpt=previous_chunk[1],
+                            page_number=previous_chunk[2],
+                        )
+                    )
+                if next_chunk is not None:
+                    neighboring_chunks.append(
+                        PersistedNeighborChunk(
+                            relation="next",
+                            excerpt=next_chunk[1],
+                            page_number=next_chunk[2],
+                        )
+                    )
+
             citation = PersistedMessageCitation(
                 chunk_id=str(row[1]),
                 source_document_id=str(row[2]),
@@ -224,9 +322,11 @@ def list_messages(db: Session, user_id: uuid.UUID, thread_id: uuid.UUID) -> list
                 filing_year=row[9],
                 filing_date=filing_date_iso,
                 source_url=row[11],
+                neighboring_chunks=neighboring_chunks,
             )
             citations_by_message_id.setdefault(row[0], []).append(citation)
     except SQLAlchemyError:
+        db.rollback()
         citations_by_message_id = {}
 
     for message in messages:
@@ -352,3 +452,70 @@ def add_turn_with_citations(
             for citation_row in citation_rows
         ],
     )
+
+
+def add_message_citations(
+    db: Session,
+    *,
+    message_id: uuid.UUID,
+    citations: list[CitationWrite],
+) -> list[PersistedCitation]:
+    if not citations:
+        return []
+
+    _ensure_message_citations_table(db)
+
+    unique_chunk_ids = list({citation.chunk_id for citation in citations})
+    chunk_rows = db.execute(
+        select(DocumentChunk.id, DocumentChunk.source_document_id).where(DocumentChunk.id.in_(unique_chunk_ids))
+    ).all()
+    source_document_by_chunk_id = {row[0]: row[1] for row in chunk_rows}
+
+    citation_rows: list[MessageCitation] = []
+    seen_keys: set[tuple[uuid.UUID, uuid.UUID, int | None, str | None]] = set()
+
+    for citation in citations:
+        source_document_id = source_document_by_chunk_id.get(citation.chunk_id)
+        if source_document_id is None:
+            continue
+
+        dedupe_key = (
+            citation.chunk_id,
+            source_document_id,
+            citation.page_number,
+            citation.quote,
+        )
+        if dedupe_key in seen_keys:
+            continue
+        seen_keys.add(dedupe_key)
+
+        citation_rows.append(
+            MessageCitation(
+                message_id=message_id,
+                chunk_id=citation.chunk_id,
+                source_document_id=source_document_id,
+                quote=citation.quote,
+                page_number=citation.page_number,
+            )
+        )
+
+    if not citation_rows:
+        return []
+
+    db.add_all(citation_rows)
+    db.commit()
+    for citation_row in citation_rows:
+        db.refresh(citation_row)
+
+    return [
+        PersistedCitation(
+            id=str(citation_row.id),
+            message_id=str(citation_row.message_id),
+            chunk_id=str(citation_row.chunk_id),
+            source_document_id=str(citation_row.source_document_id),
+            quote=citation_row.quote,
+            page_number=citation_row.page_number,
+            created_at=citation_row.created_at.isoformat(),
+        )
+        for citation_row in citation_rows
+    ]

@@ -1,0 +1,10 @@
+.env
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+alembic/
+tests/
+scripts/
+ingest/
+README.md

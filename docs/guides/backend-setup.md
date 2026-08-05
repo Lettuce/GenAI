@@ -45,6 +45,16 @@ uv run alembic upgrade head
 
 ## Run
 
+From repo root (recommended):
+
+```bash
+uv --directory backend sync
+uv --directory backend run alembic upgrade head
+uv --directory backend run uvicorn app.main:app --reload
+```
+
+Or from `backend/`:
+
 ```bash
 cd backend
 uv sync
@@ -59,6 +69,14 @@ uv run uvicorn app.main:app --reload
 The `[build-system]` and `[tool.hatch.build.targets.wheel]` sections in `backend/pyproject.toml` tell uv how to install the local `app/` package. Without that package install, imports depend on the current working directory or a manually configured `PYTHONPATH`, which is fragile in notebooks and IDE run buttons.
 
 Preferred API server command:
+
+From repo root:
+
+```bash
+uv --directory backend run uvicorn app.main:app --reload
+```
+
+From `backend/`:
 
 ```bash
 cd backend
