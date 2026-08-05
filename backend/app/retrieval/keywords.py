@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import re
 
-from nltk.corpus import stopwords
+try:
+    from nltk.corpus import stopwords as nltk_stopwords
+except ModuleNotFoundError:
+    nltk_stopwords = None
 
 _FALLBACK_FILLER_WORDS = frozenset({
     "a",
@@ -27,8 +30,11 @@ _FALLBACK_FILLER_WORDS = frozenset({
 
 
 def _get_stopwords() -> frozenset[str]:
+    if nltk_stopwords is None:
+        return _FALLBACK_FILLER_WORDS
+
     try:
-        stopword_set = frozenset(stopwords.words("english"))
+        stopword_set = frozenset(nltk_stopwords.words("english"))
         return stopword_set | _FALLBACK_FILLER_WORDS
     except LookupError:
         return _FALLBACK_FILLER_WORDS

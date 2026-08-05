@@ -62,6 +62,13 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL must use the direct or session connection, not the transaction pooler (port 6543)"
             )
+
+        if value.startswith("postgresql://"):
+            return value.replace("postgresql://", "postgresql+psycopg://", 1)
+
+        if value.startswith("postgres://"):
+            return value.replace("postgres://", "postgresql+psycopg://", 1)
+
         return value
 
 
