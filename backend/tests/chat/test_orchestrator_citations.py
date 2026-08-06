@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 
 from app.assistant.outputs import Citation, GroundedAnswer, SourcePassage
-from app.chat.orchestrator import _citation_writes, _citations_for_persistence
+from app.chat.orchestrator import _citation_writes, _citations_for_persistence, _recover_answer_with_retrieved_citations
 
 
 def _source_passage(*, chunk_id: str, document_id: str, content: str) -> SourcePassage:
@@ -22,28 +22,60 @@ def _source_passage(*, chunk_id: str, document_id: str, content: str) -> SourceP
     )
 
 
-def test_citations_for_persistence_includes_all_retrieved_passages() -> None:
-    retrieved_chunk_a = str(uuid.uuid4())
-    retrieved_chunk_b = str(uuid.uuid4())
-    retrieved_document = str(uuid.uuid4())
+def test_citations_for_persistence_uses_only_answer_citations() -> None:
+    chunk_id = str(uuid.uuid4())
+    document_id = str(uuid.uuid4())
 
     answer = GroundedAnswer(
-        answer_text='Insufficient evidence summary.',
-        citations=[],
-        insufficient_evidence=True,
-        refusal_reason='No evidence.',
+        answer_text='Grounded answer.',
+        citations=[
+            Citation(
+                chunk_id=chunk_id,
+                document_id=document_id,
+                quote='grounded citation',
+                page_number=4,
+            )
+        ],
+        insufficient_evidence=False,
+        refusal_reason=None,
     )
 
-    citations = _citations_for_persistence(
-        answer=answer,
+    citations = _citations_for_persistence(answer=answer)
+
+    assert len(citations) == 1
+    assert citations[0].chunk_id == chunk_id
+    assert citations[0].document_id == document_id
+
+
+def test_recover_answer_with_retrieved_citations_prefers_query_relevant_passages() -> None:
+    nvidia_chunk = str(uuid.uuid4())
+    microsoft_chunk = str(uuid.uuid4())
+    document_id = str(uuid.uuid4())
+
+    recovered = _recover_answer_with_retrieved_citations(
+        answer=GroundedAnswer(
+            answer_text='NVIDIA summary.',
+            citations=[],
+            insufficient_evidence=False,
+            refusal_reason=None,
+        ),
+        user_text='Summarize NVIDIA gross margin trends',
         retrieved_passages=[
-            _source_passage(chunk_id=retrieved_chunk_a, document_id=retrieved_document, content='A chunk excerpt'),
-            _source_passage(chunk_id=retrieved_chunk_b, document_id=retrieved_document, content='B chunk excerpt'),
+            _source_passage(
+                chunk_id=nvidia_chunk,
+                document_id=document_id,
+                content='NVIDIA gross margin expanded due to data center demand.',
+            ),
+            _source_passage(
+                chunk_id=microsoft_chunk,
+                document_id=document_id,
+                content='Microsoft cloud demand remained strong year over year.',
+            ),
         ],
     )
 
-    assert len(citations) == 2
-    assert {citation.chunk_id for citation in citations} == {retrieved_chunk_a, retrieved_chunk_b}
+    assert len(recovered.citations) == 1
+    assert recovered.citations[0].chunk_id == nvidia_chunk
 
 
 def test_citation_writes_skips_invalid_ids_but_keeps_valid_rows() -> None:

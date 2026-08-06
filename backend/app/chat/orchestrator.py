@@ -12,6 +12,7 @@ from app.chat.streaming import iter_ai_sdk_data_stream_events
 from app.database import chats
 from app.database.chats import CitationWrite
 from app.grounding.validator import GroundingValidationError, GroundingValidator
+from app.retrieval.company_filters import infer_retrieval_filters
 from app.retrieval.retriever import HybridRetriever
 from app.schemas.config import settings
 
@@ -65,6 +66,7 @@ def _format_sectioned_answer(*, user_text: str, answer: GroundedAnswer, retrieve
 def _recover_answer_with_retrieved_citations(
     *,
     answer: GroundedAnswer,
+    user_text: str,
     retrieved_passages: list[SourcePassage],
 ) -> GroundedAnswer:
     if answer.insufficient_evidence:
@@ -73,7 +75,9 @@ def _recover_answer_with_retrieved_citations(
     if answer.citations:
         return answer
 
-    recovered_citations = _citations_from_retrieved_passages(retrieved_passages)
+    recovered_citations = _citations_from_retrieved_passages(
+        _select_relevant_passages(user_text=user_text, retrieved_passages=retrieved_passages)
+    )
     if not recovered_citations:
         return answer
 
@@ -106,7 +110,7 @@ def _citations_from_retrieved_passages(retrieved_passages: list[SourcePassage]) 
     return deduped
 
 
-def _citations_for_persistence(*, answer: GroundedAnswer, retrieved_passages: list[SourcePassage]) -> list[Citation]:
+def _citations_for_persistence(*, answer: GroundedAnswer) -> list[Citation]:
     merged: list[Citation] = []
     seen: set[tuple[str, str]] = set()
 
@@ -117,14 +121,36 @@ def _citations_for_persistence(*, answer: GroundedAnswer, retrieved_passages: li
         seen.add(key)
         merged.append(citation)
 
-    for citation in _citations_from_retrieved_passages(retrieved_passages):
-        key = (citation.chunk_id, citation.document_id)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(citation)
-
     return merged
+
+
+def _query_keywords(user_text: str) -> set[str]:
+    tokens = {
+        token
+        for token in user_text.lower().split()
+        if len(token) >= 4 and token.isascii() and token.replace("-", "").isalnum()
+    }
+    return tokens
+
+
+def _select_relevant_passages(*, user_text: str, retrieved_passages: list[SourcePassage], max_items: int = 3) -> list[SourcePassage]:
+    if not retrieved_passages:
+        return []
+
+    keywords = _query_keywords(user_text)
+
+    scored: list[tuple[int, SourcePassage]] = []
+    for passage in retrieved_passages:
+        content = passage.content.lower()
+        overlap = sum(1 for keyword in keywords if keyword in content)
+        scored.append((overlap, passage))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    top = [passage for score, passage in scored if score > 0][:max_items]
+    if top:
+        return top
+
+    return retrieved_passages[:max_items]
 
 
 def _citation_writes(answer: GroundedAnswer) -> list[CitationWrite]:
@@ -157,11 +183,13 @@ async def stream_grounded_turn(
     retriever = HybridRetriever(db)
     assistant_agent = GroundedAssistantAgent()
     validator = GroundingValidator(model_name=settings.grounding_model)
+    inferred_filters = infer_retrieval_filters(db, query_text=user_text)
 
     deps = AssistantRuntimeDeps(
         user_id=user_id,
         thread_id=thread_id,
         retriever=retriever,
+        filters=inferred_filters,
         retrieval_query=user_text,
     )
 
@@ -183,7 +211,11 @@ async def stream_grounded_turn(
                 raw_answer = await raw_answer
                 grounded = await validator.validate(answer=raw_answer, retrieved_passages=retrieved_passages)
             except GroundingValidationError as exc:
-                recovered = _recover_answer_with_retrieved_citations(answer=raw_answer, retrieved_passages=retrieved_passages)
+                recovered = _recover_answer_with_retrieved_citations(
+                    answer=raw_answer,
+                    user_text=user_text,
+                    retrieved_passages=retrieved_passages,
+                )
                 try:
                     grounded = await validator.validate(answer=recovered, retrieved_passages=retrieved_passages)
                 except GroundingValidationError:
@@ -199,7 +231,7 @@ async def stream_grounded_turn(
 
     persisted_answer = GroundedAnswer(
         answer_text=grounded.answer_text,
-        citations=_citations_for_persistence(answer=grounded, retrieved_passages=retrieved_passages),
+        citations=_citations_for_persistence(answer=grounded),
         insufficient_evidence=grounded.insufficient_evidence,
         refusal_reason=grounded.refusal_reason,
     )

@@ -96,12 +96,16 @@ def ingest_manifest(manifest_path: Path = MANIFEST_PATH, database_url: str | Non
                 )
 
             session.commit()
-            session.execute(
-                update(DocumentChunk)
-                .where(DocumentChunk.source_document_id == document.id)
-                .values(search_vector=func.to_tsvector("english", DocumentChunk.content))
-            )
-            session.commit()
+            try:
+                session.execute(
+                    update(DocumentChunk)
+                    .where(DocumentChunk.source_document_id == document.id)
+                    .values(search_vector=func.to_tsvector("english", func.left(DocumentChunk.content, 8000)))
+                )
+                session.commit()
+            except Exception:
+                # Keep chunk ingestion usable even when database FTS index limits reject large vectors.
+                session.rollback()
             results.append(IngestionResult(source_document_id=str(document.id), chunk_count=len(chunked_document.hybrid_chunks)))
 
     return results
