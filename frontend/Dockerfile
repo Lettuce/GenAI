@@ -24,3 +24,5 @@ COPY Caddyfile /etc/caddy/Caddyfile
 COPY --from=build /app/dist /srv
 
 EXPOSE 80
+
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

@@ -45,7 +45,14 @@ class Settings(BaseSettings):
         list[str],
         NoDecode,
         BeforeValidator(_split_csv),
-    ] = Field(default_factory=lambda: ["http://localhost:5173"])
+    ] = Field(default_factory=list)
+
+    @field_validator("allowed_origins")
+    @classmethod
+    def validate_allowed_origins(cls, value: list[str]) -> list[str]:
+        if not value:
+            raise ValueError("ALLOWED_ORIGINS must be set in the environment for this deployment")
+        return value
 
     @property
     def chat_model(self) -> str:
