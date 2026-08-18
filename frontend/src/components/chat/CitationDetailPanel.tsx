@@ -59,20 +59,24 @@ function formatSourceText(value: string | null | undefined) {
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\$\s+/g, '$')
+    .replace(/\s*,\s*=\s*\.?/g, ', ')
+    .replace(/\s*=\s*(?=[,.])/g, '')
     .trim()
 
-  const listItems = normalized.split(/\s*,\s*/)
+  const listItems = normalized.split(/\s*,\s*/).map((item) => item.replace(/^=\s*/, '').trim()).filter(Boolean)
+  const deduplicatedItems: string[] = []
   const seenItems = new Set<string>()
-  const deduplicatedItems = listItems.filter((item) => {
-    const key = item.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  for (const item of listItems) {
+    const cleanedItem = item.replace(/[.]+$/g, '').trim()
+    const key = cleanedItem.toLowerCase().replace(/[^a-z0-9%]+/g, ' ').trim()
     if (!key || seenItems.has(key)) {
-      return false
+      continue
     }
     seenItems.add(key)
-    return true
-  })
+    deduplicatedItems.push(cleanedItem)
+  }
 
-  return deduplicatedItems.join(', ')
+  return deduplicatedItems.join(', ').replace(/,\s*([.!?])/g, '$1').trim()
 }
 
 function uniqueLimit(values: string[], limit = 8) {
