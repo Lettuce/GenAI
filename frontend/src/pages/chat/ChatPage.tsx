@@ -133,6 +133,7 @@ export function ChatPage() {
   const {
     messages: uiMessages,
     sendMessage,
+    stop,
     setMessages: setUiMessages,
     status,
     error: chatError,
@@ -154,6 +155,8 @@ export function ChatPage() {
 
   const loadMessages = useCallback(async (threadId: string) => {
     setLoadingMessages(true)
+    setUiMessages([])
+    setCitationsByMessageId({})
     try {
       const nextMessages = await listThreadMessages(threadId)
       const nextCitationsByMessageId: Record<string, DisplayCitation[]> = {}
@@ -313,6 +316,10 @@ export function ChatPage() {
     setCreatingThread(true)
     setError(null)
     try {
+      stop()
+      setUiMessages([])
+      setCitationsByMessageId({})
+      setSelectedCitation(null)
       const thread = await createThread()
       await refreshThreads()
       navigate(`/chat/${thread.id}`)
@@ -481,7 +488,13 @@ export function ChatPage() {
         loading={loadingThreads}
         creating={creatingThread}
         onCreateThread={() => void handleCreateThread()}
-        onSelectThread={(threadId) => navigate(`/chat/${threadId}`)}
+        onSelectThread={(threadId) => {
+          stop()
+          setUiMessages([])
+          setCitationsByMessageId({})
+          setSelectedCitation(null)
+          navigate(`/chat/${threadId}`)
+        }}
         onRenameThread={(threadId, title) => void handleRenameThread(threadId, title)}
         onTogglePinThread={handleTogglePinThread}
         onDeleteThread={(threadId) => void handleDeleteThread(threadId)}

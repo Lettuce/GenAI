@@ -60,12 +60,25 @@ const SUGGESTED_PROMPTS = [
 ]
 
 function chooseSuggestedPrompts(): string[] {
-  const shuffled = [...SUGGESTED_PROMPTS]
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1))
-    ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+  const storageKey = 'document-copilot:last-suggested-prompts'
+  const previousSelection = window.sessionStorage.getItem(storageKey)
+  let selection: string[] = []
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const shuffled = [...SUGGESTED_PROMPTS]
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1))
+      ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+    }
+
+    selection = shuffled.slice(0, 3)
+    if (selection.join('|') !== previousSelection) {
+      break
+    }
   }
-  return shuffled.slice(0, 3)
+
+  window.sessionStorage.setItem(storageKey, selection.join('|'))
+  return selection
 }
 
 function parseSectionedContent(content: string): SectionBlock[] | null {
@@ -120,12 +133,26 @@ function renderAssistantContent(content: string) {
       {sections.map((section) => (
         <section key={section.title} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
           <h4 className="mb-1 text-xs font-semibold tracking-wide text-slate-700 uppercase">{section.title}</h4>
-          <div className="space-y-1 text-sm text-slate-700">
-            {section.body.map((line, index) => (
-              <p key={`${section.title}-${index}`} className="leading-5">
-                {line}
-              </p>
-            ))}
+          <div className="space-y-1.5 text-sm text-slate-700">
+            {section.body.map((line, index) => {
+              const numberedLine = /^(\d+)\.\s+(.+)$/.exec(line)
+              if ((section.title === 'Reading' || section.title === 'Answering') && numberedLine) {
+                return (
+                  <div key={`${section.title}-${index}`} className="flex gap-2 rounded-md bg-slate-50 px-2 py-1.5 leading-5">
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-slate-200 px-1 text-[11px] font-semibold text-slate-700">
+                      {numberedLine[1]}
+                    </span>
+                    <p className="min-w-0">{numberedLine[2]}</p>
+                  </div>
+                )
+              }
+
+              return (
+                <p key={`${section.title}-${index}`} className="leading-5">
+                  {line}
+                </p>
+              )
+            })}
           </div>
         </section>
       ))}

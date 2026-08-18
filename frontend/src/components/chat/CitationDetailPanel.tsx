@@ -19,6 +19,11 @@ interface ExtractedSignals {
   entities: string[]
 }
 
+interface SourceTableRow {
+  citation: DisplayCitation
+  count: number
+}
+
 const PRODUCT_KEYWORDS = [
   'aws',
   'prime',
@@ -49,16 +54,40 @@ function formatSourceText(value: string | null | undefined) {
     return 'No excerpt available.'
   }
 
-  return value
+  const normalized = value
     .replace(/\r\n/g, '\n')
     .replace(/\n+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\$\s+/g, '$')
     .trim()
+
+  const listItems = normalized.split(/\s*,\s*/)
+  const seenItems = new Set<string>()
+  const deduplicatedItems = listItems.filter((item) => {
+    const key = item.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    if (!key || seenItems.has(key)) {
+      return false
+    }
+    seenItems.add(key)
+    return true
+  })
+
+  return deduplicatedItems.join(', ')
 }
 
 function uniqueLimit(values: string[], limit = 8) {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].slice(0, limit)
+  const seen = new Set<string>()
+  const uniqueValues: string[] = []
+  for (const value of values) {
+    const cleaned = formatSourceText(value)
+    const key = cleaned.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    if (!key || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    uniqueValues.push(cleaned)
+  }
+  return uniqueValues.slice(0, limit)
 }
 
 function extractMatches(text: string, pattern: RegExp, limit = 8) {
@@ -105,19 +134,33 @@ function quickSignalSummary(text: string) {
   return parts.length > 0 ? parts.join(' | ') : 'n/a'
 }
 
-function buildMarkdownTable(citations: DisplayCitation[]) {
+function buildSourceRows(citations: DisplayCitation[]): SourceTableRow[] {
+  const rows = new Map<string, SourceTableRow>()
+  for (const citation of citations) {
+    const key = [citation.source_document_id, citation.filing_type || '', citation.filing_year || '', citation.page_number || ''].join('|')
+    const existing = rows.get(key)
+    if (existing) {
+      existing.count += 1
+    } else {
+      rows.set(key, { citation, count: 1 })
+    }
+  }
+  return [...rows.values()]
+}
+
+function buildMarkdownTable(rows: SourceTableRow[]) {
   const header = '| Source | Filing | Year | Page | Quote |'
   const divider = '| --- | --- | --- | --- | --- |'
-  const rows = citations.map((citation) => {
+  const markdownRows = rows.map(({ citation, count }) => {
     const source = escapeMarkdownCell(citation.company_name || citation.ticker || 'Source')
     const filing = escapeMarkdownCell(citation.filing_type || 'n/a')
     const year = citation.filing_year ? String(citation.filing_year) : 'n/a'
     const page = citation.page_number ? String(citation.page_number) : 'n/a'
     const quote = escapeMarkdownCell(formatSourceText(citation.quote || citation.excerpt || 'No excerpt available'))
-    return `| ${source} | ${filing} | ${year} | ${page} | ${quote} |`
+    return `| ${source} (${count}) | ${filing} | ${year} | ${page} | ${quote} |`
   })
 
-  return [header, divider, ...rows].join('\n')
+  return [header, divider, ...markdownRows].join('\n')
 }
 
 export function CitationDetailPanel({ selection, citationsForMessage }: CitationDetailPanelProps) {
@@ -131,7 +174,8 @@ export function CitationDetailPanel({ selection, citationsForMessage }: Citation
   }
 
   const citation = selection.citation
-  const markdownTable = buildMarkdownTable(citationsForMessage)
+  const sourceRows = buildSourceRows(citationsForMessage)
+  const markdownTable = buildMarkdownTable(sourceRows)
   const previousChunk = citation.neighboring_chunks.find((chunk) => chunk.relation === 'previous')
   const nextChunk = citation.neighboring_chunks.find((chunk) => chunk.relation === 'next')
   const selectedChunkText = formatSourceText(citation.quote || citation.excerpt)
@@ -159,11 +203,14 @@ export function CitationDetailPanel({ selection, citationsForMessage }: Citation
               </tr>
             </thead>
             <tbody>
-              {citationsForMessage.map((item) => {
+              {sourceRows.map(({ citation: item, count }) => {
                 const isSelected = item.chunk_id === citation.chunk_id
                 return (
-                  <tr key={item.chunk_id} className={isSelected ? 'bg-slate-50' : 'bg-white'}>
-                    <td className="border-b border-slate-100 px-2 py-2 text-slate-800 break-words">{item.company_name || item.ticker || 'Source'}</td>
+                  <tr key={`${item.source_document_id}:${item.page_number ?? 'na'}`} className={isSelected ? 'bg-slate-50' : 'bg-white'}>
+                    <td className="border-b border-slate-100 px-2 py-2 text-slate-800 break-words">
+                      <span>{item.company_name || item.ticker || 'Source'}</span>
+                      {count > 1 ? <span className="ml-1 text-[10px] text-slate-500">({count} chunks)</span> : null}
+                    </td>
                     <td className="border-b border-slate-100 px-2 py-2 text-slate-700 break-words">{item.filing_type || 'n/a'}</td>
                     <td className="border-b border-slate-100 px-2 py-2 text-slate-700">{item.filing_year ?? 'n/a'}</td>
                     <td className="border-b border-slate-100 px-2 py-2 text-slate-700">{item.page_number ?? 'n/a'}</td>
