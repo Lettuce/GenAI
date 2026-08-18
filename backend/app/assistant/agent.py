@@ -218,9 +218,16 @@ class GroundedAssistantAgent:
         for passage in passages:
             company_key = passage.company_name or passage.ticker or "Unknown issuer"
             document_key = passage.document_id
-            if company_key not in seen_companies or document_key not in seen_documents:
+            if company_key not in seen_companies:
                 selected.append(passage)
                 seen_companies.add(company_key)
+                seen_documents.add(document_key)
+                if len(selected) >= 8:
+                    break
+                continue
+
+            if document_key not in seen_documents:
+                selected.append(passage)
                 seen_documents.add(document_key)
                 if len(selected) >= 8:
                     break

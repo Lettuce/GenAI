@@ -16,6 +16,11 @@ _COMPANY_ALIASES: dict[str, tuple[str, ...]] = {
     "MSFT": ("microsoft", "msft"),
     "NVDA": ("nvidia", "nvda"),
 }
+_ALIAS_TO_TICKER = {
+    alias.lower(): ticker
+    for ticker, aliases in _COMPANY_ALIASES.items()
+    for alias in aliases
+}
 
 
 def _normalize(text: str) -> str:
@@ -24,9 +29,12 @@ def _normalize(text: str) -> str:
 
 def _extract_token_tickers(query_text: str) -> set[str]:
     matches: set[str] = set()
-    for token in re.findall(r"[A-Za-z]{1,6}", query_text.upper()):
-        if token in _COMPANY_ALIASES:
-            matches.add(token)
+    for token in re.findall(r"[A-Za-z]+", query_text):
+        normalized = token.upper()
+        if normalized in _COMPANY_ALIASES:
+            matches.add(normalized)
+        elif token.lower() in _ALIAS_TO_TICKER:
+            matches.add(_ALIAS_TO_TICKER[token.lower()])
     return matches
 
 

@@ -28,6 +28,24 @@ def test_infer_retrieval_filters_from_company_name_alias() -> None:
     assert filters.tickers == ["NVDA"]
 
 
+def test_infer_retrieval_filters_from_multiple_company_names() -> None:
+    session = _FakeSession(["AAPL", "MSFT", "GOOGL"])
+
+    filters = infer_retrieval_filters(session, query_text="Compare Apple and Microsoft revenue with Google")
+
+    assert filters is not None
+    assert filters.tickers == ["AAPL", "GOOGL", "MSFT"]
+
+
+def test_infer_retrieval_filters_keeps_microsoft_and_nvidia_together() -> None:
+    session = _FakeSession(["MSFT", "NVDA"])
+
+    filters = infer_retrieval_filters(session, query_text="Microsoft and NVIDIA operating margin trends across recent filings")
+
+    assert filters is not None
+    assert filters.tickers == ["MSFT", "NVDA"]
+
+
 def test_infer_retrieval_filters_from_ticker_token() -> None:
     session = _FakeSession(["GOOGL"])
 

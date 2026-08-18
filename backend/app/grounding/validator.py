@@ -11,7 +11,7 @@ class GroundingValidationError(ValueError):
 
 @dataclass(frozen=True)
 class GroundingValidator:
-    max_citations: int = 8
+    max_citations: int = 24
     model_name: str | None = None
 
     async def validate(self, *, answer: GroundedAnswer, retrieved_passages: list[SourcePassage]) -> GroundedAnswer:

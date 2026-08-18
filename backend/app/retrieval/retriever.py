@@ -39,32 +39,39 @@ class HybridRetriever:
     def _diversify_passages(passages: list[RetrievedPassage], *, filters: RetrievalFilters | None, limit: int) -> list[RetrievedPassage]:
         if not passages or limit <= 0:
             return []
-        if filters is None or not filters.tickers or len(filters.tickers) <= 1:
+        if filters is None or not filters.tickers:
             return passages[:limit]
 
-        requested_tickers = {ticker.upper() for ticker in filters.tickers}
-        selected: list[RetrievedPassage] = []
+        requested_tickers = [ticker.strip().upper() for ticker in filters.tickers if ticker and ticker.strip()]
+        if len(requested_tickers) <= 1:
+            return passages[:limit]
+
+        ranked_by_ticker: dict[str, list[RetrievedPassage]] = {ticker: [] for ticker in requested_tickers}
+        remaining: list[RetrievedPassage] = []
         seen_ids: set[str] = set()
 
-        for ticker in filters.tickers:
-            candidate = next(
-                (
-                    passage for passage in passages
-                    if (passage.ticker or "").upper() == ticker.upper() and passage.chunk_id not in seen_ids
-                ),
-                None,
-            )
-            if candidate is None:
-                continue
-            selected.append(candidate)
-            seen_ids.add(candidate.chunk_id)
-
         for passage in passages:
-            if passage.chunk_id in seen_ids:
-                continue
-            selected.append(passage)
-            seen_ids.add(passage.chunk_id)
-            if len(selected) >= limit:
+            ticker = (passage.ticker or "").upper()
+            if ticker in ranked_by_ticker:
+                ranked_by_ticker[ticker].append(passage)
+            else:
+                remaining.append(passage)
+
+        selected: list[RetrievedPassage] = []
+        active_tickers = [ticker for ticker in requested_tickers if ranked_by_ticker.get(ticker)]
+        while len(selected) < limit and active_tickers:
+            for ticker in active_tickers:
+                bucket = ranked_by_ticker.get(ticker, [])
+                if not bucket:
+                    continue
+                passage = bucket.pop(0)
+                if passage.chunk_id in seen_ids:
+                    continue
+                selected.append(passage)
+                seen_ids.add(passage.chunk_id)
+                if len(selected) >= limit:
+                    break
+            if not any(bucket for bucket in ranked_by_ticker.values()):
                 break
 
         if len(selected) < limit:

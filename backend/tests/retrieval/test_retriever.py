@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import uuid
+
 from app.retrieval.retriever import HybridRetriever
 from app.retrieval.types import FusedChunkCandidate, RankedChunkCandidate, RetrievedPassage, RetrievalFilters
 
@@ -238,6 +240,78 @@ def test_hybrid_retriever_diversifies_multi_company_results(monkeypatch) -> None
 
     tickers = {passage.ticker for passage in passages}
     assert tickers == {"MSFT", "AAPL"}
+
+
+def test_hybrid_retriever_keeps_multiple_relevant_documents_for_each_requested_company(monkeypatch) -> None:
+    db = _FakeSession()
+    embedding_client = _FakeClient()
+    filters = RetrievalFilters(tickers=["MSFT", "AAPL"])
+
+    def _fake_embed_query(query: str, client: object) -> list[float]:
+        assert query == "compare cloud and services revenue"
+        assert client is embedding_client
+        return [0.0, 0.0]
+
+    def _fake_semantic_search(db_session: object, *, query_embedding: list[float], limit: int, filters: object) -> list[RankedChunkCandidate]:
+        assert db_session is db
+        assert filters is filters
+        return []
+
+    def _fake_lexical_search(db_session: object, *, query_text: str, limit: int, filters: object) -> list[RankedChunkCandidate]:
+        assert db_session is db
+        assert query_text == "compare cloud and services revenue"
+        assert filters is filters
+        return [
+            RankedChunkCandidate(chunk_id=uuid.uuid4(), source_document_id=uuid.uuid4(), rank=1, score=0.99),
+            RankedChunkCandidate(chunk_id=uuid.uuid4(), source_document_id=uuid.uuid4(), rank=2, score=0.95),
+            RankedChunkCandidate(chunk_id=uuid.uuid4(), source_document_id=uuid.uuid4(), rank=3, score=0.90),
+            RankedChunkCandidate(chunk_id=uuid.uuid4(), source_document_id=uuid.uuid4(), rank=4, score=0.88),
+            RankedChunkCandidate(chunk_id=uuid.uuid4(), source_document_id=uuid.uuid4(), rank=5, score=0.80),
+            RankedChunkCandidate(chunk_id=uuid.uuid4(), source_document_id=uuid.uuid4(), rank=6, score=0.70),
+        ]
+
+    def _fake_fuse(*, semantic_candidates: list[RankedChunkCandidate], lexical_candidates: list[RankedChunkCandidate], rrf_k: int, limit: int) -> list[FusedChunkCandidate]:
+        return [
+            FusedChunkCandidate(chunk_id=c.chunk_id, source_document_id=c.source_document_id, fused_score=0.99 - idx * 0.05, semantic_rank=None, lexical_rank=c.rank, semantic_score=None, lexical_score=c.score)
+            for idx, c in enumerate(lexical_candidates)
+        ]
+
+    def _fake_build_passages(db_session: object, fused_candidates: list[FusedChunkCandidate], *, neighbor_window: int) -> list[RetrievedPassage]:
+        tickers = ["MSFT", "MSFT", "MSFT", "AAPL", "AAPL", "AAPL"]
+        return [
+            RetrievedPassage(
+                chunk_id=str(candidate.chunk_id),
+                document_id=str(candidate.source_document_id),
+                content=f"{label} revenue performance.",
+                page_number=idx + 1,
+                ticker=ticker,
+                company_name="Microsoft" if ticker == "MSFT" else "Apple",
+                filing_type="10-K",
+                filing_year=2024,
+                filing_date="2024-01-01T00:00:00+00:00",
+                accession_number=f"{ticker.lower()}-{idx}",
+                source_url=f"https://example.com/{ticker.lower()}-{idx}",
+                fused_score=candidate.fused_score,
+                semantic_rank=None,
+                lexical_rank=idx + 1,
+                neighbor_passages=[],
+            )
+            for idx, (candidate, ticker, label) in enumerate(zip(fused_candidates, tickers, ["MSFT-1", "MSFT-2", "MSFT-3", "AAPL-1", "AAPL-2", "AAPL-3"]))
+        ]
+
+    monkeypatch.setattr("app.retrieval.retriever.embed_query", _fake_embed_query)
+    monkeypatch.setattr("app.retrieval.retriever.semantic_search", _fake_semantic_search)
+    monkeypatch.setattr("app.retrieval.retriever.lexical_search", _fake_lexical_search)
+    monkeypatch.setattr("app.retrieval.retriever.fuse_ranked_candidates", _fake_fuse)
+    monkeypatch.setattr("app.retrieval.retriever.build_passages", _fake_build_passages)
+
+    retriever = HybridRetriever(db, embedding_client=embedding_client, final_limit=4)
+    passages = retriever.retrieve("compare cloud and services revenue", filters=filters)
+
+    assert len(passages) == 4
+    assert {passage.ticker for passage in passages} == {"MSFT", "AAPL"}
+    assert sum(1 for passage in passages if passage.ticker == "MSFT") >= 2
+    assert sum(1 for passage in passages if passage.ticker == "AAPL") >= 2
 
 
 def test_hybrid_retriever_falls_back_to_lexical_when_embedding_fails(monkeypatch) -> None:

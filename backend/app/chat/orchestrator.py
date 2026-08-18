@@ -12,6 +12,7 @@ from app.chat.streaming import iter_ai_sdk_data_stream_events
 from app.database import chats
 from app.database.chats import CitationWrite
 from app.grounding.validator import GroundingValidationError, GroundingValidator
+from app.retrieval import company_filters
 from app.retrieval.company_filters import infer_retrieval_filters
 from app.retrieval.retriever import HybridRetriever
 from app.schemas.config import settings
@@ -32,12 +33,12 @@ def _format_sectioned_answer(*, user_text: str, answer: GroundedAnswer, retrieve
     sources = [
         f"{passage.company_name or passage.ticker or 'Unknown issuer'} - "
         f"{passage.filing_type or 'Filing'} {passage.filing_year or ''}".strip()
-        for passage in retrieved_passages[:3]
+        for passage in retrieved_passages[:8]
     ]
     searching = "\n".join(f"- {source}" for source in sources) if sources else "- No relevant filings found"
 
     reading_lines = []
-    for passage in retrieved_passages[:2]:
+    for passage in retrieved_passages[:6]:
         snippet = passage.content.replace("\n", " ").strip()[:220]
         reading_lines.append(f"- {snippet}")
     reading = "\n".join(reading_lines) if reading_lines else "- No passage excerpts available"
@@ -133,52 +134,76 @@ def _query_keywords(user_text: str) -> set[str]:
     return tokens
 
 
-def _select_relevant_passages(*, user_text: str, retrieved_passages: list[SourcePassage], max_items: int = 3) -> list[SourcePassage]:
+def _query_company_tickers(user_text: str) -> set[str]:
+    requested = company_filters._extract_token_tickers(user_text) | company_filters._extract_alias_tickers(user_text)
+    return {ticker.upper() for ticker in requested}
+
+
+def _passage_matches_requested_companies(*, passage: SourcePassage, requested_tickers: set[str]) -> bool:
+    if not requested_tickers:
+        return True
+
+    passage_ticker = (passage.ticker or '').upper()
+    if passage_ticker in requested_tickers:
+        return True
+
+    passage_company = (passage.company_name or '').lower()
+    content = passage.content.lower()
+    for ticker in requested_tickers:
+        aliases = {alias.lower() for alias in company_filters._COMPANY_ALIASES.get(ticker, ())}
+        if passage_company in aliases:
+            return True
+        if any(alias in content for alias in aliases):
+            return True
+
+    return False
+
+
+def _select_relevant_passages(*, user_text: str, retrieved_passages: list[SourcePassage], max_items: int = 8) -> list[SourcePassage]:
     if not retrieved_passages:
         return []
 
     keywords = _query_keywords(user_text)
+    requested_tickers = _query_company_tickers(user_text)
+
+    candidates = retrieved_passages
+    if requested_tickers:
+        candidates = [
+            passage
+            for passage in retrieved_passages
+            if _passage_matches_requested_companies(passage=passage, requested_tickers=requested_tickers)
+        ]
+        if not candidates:
+            candidates = retrieved_passages
 
     scored: list[tuple[int, SourcePassage]] = []
-    for passage in retrieved_passages:
+    for passage in candidates:
+        passage_ticker = (passage.ticker or '').upper()
         content = passage.content.lower()
+
         overlap = sum(1 for keyword in keywords if keyword in content)
+        if requested_tickers:
+            if passage_ticker in requested_tickers:
+                overlap += 12
+            else:
+                for ticker in requested_tickers:
+                    aliases = {alias.lower() for alias in company_filters._COMPANY_ALIASES.get(ticker, ())}
+                    if any(alias in content for alias in aliases):
+                        overlap += 12
+                        break
+
         scored.append((overlap, passage))
 
     scored.sort(key=lambda item: item[0], reverse=True)
 
     selected: list[SourcePassage] = []
-    seen_companies: set[str] = set()
-    seen_documents: set[str] = set()
     for _, passage in scored:
-        company_key = passage.company_name or passage.ticker or "Unknown issuer"
-        document_key = passage.document_id
-
         if len(selected) >= max_items:
             break
-
-        if company_key not in seen_companies:
-            selected.append(passage)
-            seen_companies.add(company_key)
-            seen_documents.add(document_key)
-            continue
-
-        if document_key not in seen_documents:
-            selected.append(passage)
-            seen_companies.add(company_key)
-            seen_documents.add(document_key)
-            continue
+        selected.append(passage)
 
     if not selected:
-        return retrieved_passages[:max_items]
-
-    if len(selected) < max_items:
-        for passage in retrieved_passages:
-            if passage in selected:
-                continue
-            if len(selected) >= max_items:
-                break
-            selected.append(passage)
+        return candidates[:max_items]
 
     return selected[:max_items]
 
