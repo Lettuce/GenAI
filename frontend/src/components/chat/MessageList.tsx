@@ -38,6 +38,7 @@ interface MessageListProps {
   onRetryAssistantMessage: (messageId: string) => void
   onOpenCitationsForMessage: (messageId: string) => void
   onOpenCitationChunk: (params: { messageId: string; chunkId: string }) => void
+  onSuggestedPrompt?: (prompt: string) => Promise<void>
 }
 
 interface SectionBlock {
@@ -122,9 +123,15 @@ export function MessageList({
   onRetryAssistantMessage,
   onOpenCitationsForMessage,
   onOpenCitationChunk,
+  onSuggestedPrompt,
 }: MessageListProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
   const hasMessages = messages.length > 0
+  const starterPrompts = [
+    'Summarize the biggest risks and revenue drivers in Apple’s latest 10-K.',
+    'Compare Microsoft and NVIDIA operating margin trends across recent filings.',
+    'What did Amazon say about customer concentration and liquidity in its annual report?',
+  ]
   const latestAssistantIndex = (() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       if (messages[index].role === 'assistant') {
@@ -136,8 +143,33 @@ export function MessageList({
 
   if (!hasMessages) {
     return (
-      <div className="flex flex-1 items-center justify-center px-6">
-        <p className="text-sm text-slate-500">Start a conversation to test streaming from the FastAPI stub.</p>
+      <div className="flex flex-1 items-center justify-center px-6 py-8">
+        <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h3 className="text-2xl font-semibold tracking-tight text-slate-900">How can I help?</h3>
+          <p className="mt-3 text-sm leading-6 text-slate-600">
+            I can answer questions from the SEC filing corpus, compare companies across recent annual and quarterly reports,
+            and surface cited passages that support the answer. I can’t provide legal, investment advice, or answer questions
+            outside the documents in this dataset.
+          </p>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            {starterPrompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => {
+                  if (onSuggestedPrompt) {
+                    void onSuggestedPrompt(prompt)
+                  }
+                }}
+                disabled={isStreaming || !onSuggestedPrompt}
+                className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left text-sm text-slate-700 transition hover:border-slate-300 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
     )
   }

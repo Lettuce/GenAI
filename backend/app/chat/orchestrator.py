@@ -146,11 +146,41 @@ def _select_relevant_passages(*, user_text: str, retrieved_passages: list[Source
         scored.append((overlap, passage))
 
     scored.sort(key=lambda item: item[0], reverse=True)
-    top = [passage for score, passage in scored if score > 0][:max_items]
-    if top:
-        return top
 
-    return retrieved_passages[:max_items]
+    selected: list[SourcePassage] = []
+    seen_companies: set[str] = set()
+    seen_documents: set[str] = set()
+    for _, passage in scored:
+        company_key = passage.company_name or passage.ticker or "Unknown issuer"
+        document_key = passage.document_id
+
+        if len(selected) >= max_items:
+            break
+
+        if company_key not in seen_companies:
+            selected.append(passage)
+            seen_companies.add(company_key)
+            seen_documents.add(document_key)
+            continue
+
+        if document_key not in seen_documents:
+            selected.append(passage)
+            seen_companies.add(company_key)
+            seen_documents.add(document_key)
+            continue
+
+    if not selected:
+        return retrieved_passages[:max_items]
+
+    if len(selected) < max_items:
+        for passage in retrieved_passages:
+            if passage in selected:
+                continue
+            if len(selected) >= max_items:
+                break
+            selected.append(passage)
+
+    return selected[:max_items]
 
 
 def _citation_writes(answer: GroundedAnswer) -> list[CitationWrite]:

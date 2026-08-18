@@ -210,15 +210,30 @@ class GroundedAssistantAgent:
 
     @staticmethod
     def _build_best_effort_answer(passages: list[SourcePassage], *, failure_reason: str) -> GroundedAnswer:
-        citations = [
-            Citation(
-                chunk_id=passage.chunk_id,
-                document_id=passage.document_id,
-                quote=passage.content[:320],
-                page_number=passage.page_number,
+        citations: list[Citation] = []
+        selected: list[SourcePassage] = []
+        seen_companies: set[str] = set()
+        seen_documents: set[str] = set()
+
+        for passage in passages:
+            company_key = passage.company_name or passage.ticker or "Unknown issuer"
+            document_key = passage.document_id
+            if company_key not in seen_companies or document_key not in seen_documents:
+                selected.append(passage)
+                seen_companies.add(company_key)
+                seen_documents.add(document_key)
+                if len(selected) >= 8:
+                    break
+
+        for passage in selected:
+            citations.append(
+                Citation(
+                    chunk_id=passage.chunk_id,
+                    document_id=passage.document_id,
+                    quote=passage.content[:320],
+                    page_number=passage.page_number,
+                )
             )
-            for passage in passages[:3]
-        ]
 
         if not citations:
             return GroundedAnswer(
@@ -229,7 +244,7 @@ class GroundedAssistantAgent:
             )
 
         answer_lines = ["I found relevant filing evidence but had trouble completing the final response formatting."]
-        for index, passage in enumerate(passages[:3], start=1):
+        for index, passage in enumerate(selected, start=1):
             company = passage.company_name or passage.ticker or "Unknown issuer"
             filing = passage.filing_type or "filing"
             year = str(passage.filing_year) if passage.filing_year is not None else "unknown year"

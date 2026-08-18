@@ -208,7 +208,8 @@ export function ChatPage() {
   }, [displayMessages, selectedCitation])
 
   const isStreaming = status === 'submitted' || status === 'streaming'
-  const displayError = error ?? chatError?.message ?? null
+  const isBlankReadyState = !hasActiveThread && uiMessages.length === 0 && status === 'ready' && !loadingMessages && !loadingThreads
+  const displayError = isBlankReadyState ? null : (error ?? chatError?.message ?? null)
 
   const progressStage = useMemo<'Analyzing' | 'Searching' | 'Reading' | 'Verifying' | 'Answering' | null>(() => {
     if (!isStreaming) {
@@ -324,6 +325,11 @@ export function ChatPage() {
   }
 
   async function handleSubmitMessage(text: string) {
+    const nextText = text.trim()
+    if (!nextText) {
+      return
+    }
+
     setError(null)
     clearError()
 
@@ -353,7 +359,7 @@ export function ChatPage() {
     }
 
     try {
-      await submitToThread(threadId, text)
+      await submitToThread(threadId, nextText)
     } catch (err) {
       const fallbackMessage = err instanceof Error ? err.message : 'Failed to stream response'
       const message = fallbackMessage.toLowerCase()
@@ -373,6 +379,10 @@ export function ChatPage() {
         setError(fallbackMessage)
       }
     }
+  }
+
+  async function handleSuggestedPrompt(prompt: string) {
+    await handleSubmitMessage(prompt)
   }
 
   async function handleRetryAssistantMessage(assistantMessageId: string) {
@@ -494,7 +504,7 @@ export function ChatPage() {
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="border-b border-slate-200 bg-white px-4 py-3">
           <h2 className="text-sm font-semibold text-slate-900">{hasActiveThread ? 'Chat Thread' : 'New Chat'}</h2>
-          <p className="text-xs text-slate-500">FastAPI stub stream with persisted history</p>
+          <p className="text-xs text-slate-500">AI research assistant for SEC filing analysis and cited source-grounded answers.</p>
         </div>
 
         {displayError ? (
@@ -515,6 +525,7 @@ export function ChatPage() {
               onRetryAssistantMessage={(messageId) => void handleRetryAssistantMessage(messageId)}
               onOpenCitationsForMessage={handleOpenCitationsForMessage}
               onOpenCitationChunk={handleOpenCitationChunk}
+              onSuggestedPrompt={(prompt) => handleSuggestedPrompt(prompt)}
             />
           )}
         </div>
