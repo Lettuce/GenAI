@@ -30,17 +30,26 @@ def _fallback_refusal(reason: str) -> GroundedAnswer:
 def _format_sectioned_answer(*, user_text: str, answer: GroundedAnswer, retrieved_passages: list[SourcePassage]) -> str:
     analyzed = user_text.strip() or "No query text was provided."
 
+    source_counts: dict[str, int] = {}
+    for passage in retrieved_passages:
+        source = (
+            f"{passage.company_name or passage.ticker or 'Unknown issuer'} - "
+            f"{passage.filing_type or 'Filing'} {passage.filing_year or ''}"
+        ).strip()
+        source_counts[source] = source_counts.get(source, 0) + 1
+
     sources = [
-        f"{passage.company_name or passage.ticker or 'Unknown issuer'} - "
-        f"{passage.filing_type or 'Filing'} {passage.filing_year or ''}".strip()
-        for passage in retrieved_passages[:8]
+        f"{source} ({count} passage{'s' if count != 1 else ''})"
+        for source, count in source_counts.items()
     ]
     searching = "\n".join(f"- {source}" for source in sources) if sources else "- No relevant filings found"
 
     reading_lines = []
-    for passage in retrieved_passages[:6]:
+    for index, passage in enumerate(retrieved_passages, start=1):
+        issuer = passage.company_name or passage.ticker or "Unknown issuer"
+        page = f"p. {passage.page_number}" if passage.page_number is not None else "page n/a"
         snippet = passage.content.replace("\n", " ").strip()[:220]
-        reading_lines.append(f"- {snippet}")
+        reading_lines.append(f"{index}. {issuer}, {page}: {snippet}")
     reading = "\n".join(reading_lines) if reading_lines else "- No passage excerpts available"
 
     if answer.insufficient_evidence:
@@ -73,14 +82,22 @@ def _recover_answer_with_retrieved_citations(
     if answer.insufficient_evidence:
         return answer
 
-    if answer.citations:
-        return answer
-
-    recovered_citations = _citations_from_retrieved_passages(
+    retrieved_citations = _citations_from_retrieved_passages(
         _select_relevant_passages(user_text=user_text, retrieved_passages=retrieved_passages)
     )
-    if not recovered_citations:
+    if not retrieved_citations and answer.citations:
         return answer
+    if not retrieved_citations:
+        return answer
+
+    recovered_citations = _citations_for_persistence(
+        answer=GroundedAnswer(
+            answer_text=answer.answer_text,
+            citations=[*answer.citations, *retrieved_citations],
+            insufficient_evidence=False,
+            refusal_reason=None,
+        )
+    )
 
     return GroundedAnswer(
         answer_text=answer.answer_text,
@@ -159,7 +176,7 @@ def _passage_matches_requested_companies(*, passage: SourcePassage, requested_ti
     return False
 
 
-def _select_relevant_passages(*, user_text: str, retrieved_passages: list[SourcePassage], max_items: int = 8) -> list[SourcePassage]:
+def _select_relevant_passages(*, user_text: str, retrieved_passages: list[SourcePassage], max_items: int | None = None) -> list[SourcePassage]:
     if not retrieved_passages:
         return []
 
@@ -198,14 +215,14 @@ def _select_relevant_passages(*, user_text: str, retrieved_passages: list[Source
 
     selected: list[SourcePassage] = []
     for _, passage in scored:
-        if len(selected) >= max_items:
+        if max_items is not None and len(selected) >= max_items:
             break
         selected.append(passage)
 
     if not selected:
-        return candidates[:max_items]
+        return candidates if max_items is None else candidates[:max_items]
 
-    return selected[:max_items]
+    return selected if max_items is None else selected[:max_items]
 
 
 def _citation_writes(answer: GroundedAnswer) -> list[CitationWrite]:

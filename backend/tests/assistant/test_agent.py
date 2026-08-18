@@ -88,3 +88,31 @@ def test_grounded_agent_accepts_structured_model_output() -> None:
     assert answer.insufficient_evidence is False
     assert len(answer.citations) == 1
     assert answer.citations[0].chunk_id == "11111111-1111-1111-1111-111111111111"
+
+
+def test_grounded_agent_fallback_is_readable_and_cites_all_passages() -> None:
+    agent = GroundedAssistantAgent(model_name="test")
+    deps = AssistantRuntimeDeps(
+        user_id=uuid.uuid4(),
+        thread_id=uuid.uuid4(),
+        retriever=_FakeRetriever(passages=[_retrieved_passage()]),
+    )
+    passages = agent.retrieve_passages(deps, "What drove services growth?")
+
+    async def _failing_run(prompt: str, deps: AssistantRuntimeDeps) -> object:
+        raise ValueError("structured output formatting failed")
+
+    agent._run = _failing_run
+
+    answer = asyncio.run(
+        agent.answer(
+            user_query="What drove services growth?",
+            deps=deps,
+            retrieved_passages=passages,
+        )
+    )
+
+    assert answer.insufficient_evidence is False
+    assert "trouble completing the final response formatting" not in answer.answer_text
+    assert len(answer.citations) == len(passages)
+    assert answer.citations[0].chunk_id == passages[0].chunk_id

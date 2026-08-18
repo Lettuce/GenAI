@@ -26,7 +26,12 @@ def _load_instructions() -> str:
 
 
 def _format_passages(passages: list[SourcePassage]) -> str:
-    return json.dumps([passage.model_dump() for passage in passages], ensure_ascii=True)
+    prompt_passages = []
+    for passage in passages:
+        data = passage.model_dump()
+        data["content"] = passage.content[:1800]
+        prompt_passages.append(data)
+    return json.dumps(prompt_passages, ensure_ascii=True)
 
 
 def _to_source_passage(passage: RetrievedPassage) -> SourcePassage:
@@ -190,7 +195,7 @@ class GroundedAssistantAgent:
 
         prompt = (
             "Answer the user using only these retrieved passages. "
-            "Every factual claim must be cited with chunk_id and document_id. "
+            "Cite the most relevant passages with chunk_id and document_id; the system will preserve all retrieved sources separately. "
             "If evidence is insufficient, set insufficient_evidence=true and explain briefly.\n\n"
             f"User query: {user_query}\n"
             f"Retrieved passages JSON: {_format_passages(passages)}"
@@ -212,25 +217,9 @@ class GroundedAssistantAgent:
     def _build_best_effort_answer(passages: list[SourcePassage], *, failure_reason: str) -> GroundedAnswer:
         citations: list[Citation] = []
         selected: list[SourcePassage] = []
-        seen_companies: set[str] = set()
-        seen_documents: set[str] = set()
 
         for passage in passages:
-            company_key = passage.company_name or passage.ticker or "Unknown issuer"
-            document_key = passage.document_id
-            if company_key not in seen_companies:
-                selected.append(passage)
-                seen_companies.add(company_key)
-                seen_documents.add(document_key)
-                if len(selected) >= 8:
-                    break
-                continue
-
-            if document_key not in seen_documents:
-                selected.append(passage)
-                seen_documents.add(document_key)
-                if len(selected) >= 8:
-                    break
+            selected.append(passage)
 
         for passage in selected:
             citations.append(
@@ -250,7 +239,7 @@ class GroundedAssistantAgent:
                 refusal_reason=failure_reason,
             )
 
-        answer_lines = ["I found relevant filing evidence but had trouble completing the final response formatting."]
+        answer_lines = ["Based on the retrieved filing evidence:"]
         for index, passage in enumerate(selected, start=1):
             company = passage.company_name or passage.ticker or "Unknown issuer"
             filing = passage.filing_type or "filing"

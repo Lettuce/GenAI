@@ -37,7 +37,6 @@ interface MessageListProps {
   onCitationSelect: (params: { messageId: string; citation: DisplayCitation } | null) => void
   onRetryAssistantMessage: (messageId: string) => void
   onOpenCitationsForMessage: (messageId: string) => void
-  onOpenCitationChunk: (params: { messageId: string; chunkId: string }) => void
   onSuggestedPrompt?: (prompt: string) => Promise<void>
 }
 
@@ -47,6 +46,27 @@ interface SectionBlock {
 }
 
 const SECTION_TITLES: SectionBlock['title'][] = ['Analyzing', 'Searching', 'Reading', 'Verifying', 'Answering']
+
+const SUGGESTED_PROMPTS = [
+  'Summarize the biggest risks and revenue drivers in Apple’s latest 10-K.',
+  'Compare Microsoft and NVIDIA operating margin trends across recent filings.',
+  'What did Amazon say about customer concentration and liquidity in its annual report?',
+  'How did Alphabet describe changes in advertising revenue and operating costs?',
+  'Compare recent free cash flow trends for Apple and Microsoft.',
+  'What are NVIDIA’s main data center growth drivers and risks?',
+  'Summarize Meta’s latest comments about capital spending and AI infrastructure.',
+  'Which companies reported the strongest cloud growth in their recent filings?',
+  'What liquidity risks did major technology companies disclose?',
+]
+
+function chooseSuggestedPrompts(): string[] {
+  const shuffled = [...SUGGESTED_PROMPTS]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    ;[shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]]
+  }
+  return shuffled.slice(0, 3)
+}
 
 function parseSectionedContent(content: string): SectionBlock[] | null {
   const normalized = content.replace(/\r\n/g, '\n').trim()
@@ -122,16 +142,11 @@ export function MessageList({
   onCitationSelect,
   onRetryAssistantMessage,
   onOpenCitationsForMessage,
-  onOpenCitationChunk,
   onSuggestedPrompt,
 }: MessageListProps) {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null)
+  const [starterPrompts] = useState(chooseSuggestedPrompts)
   const hasMessages = messages.length > 0
-  const starterPrompts = [
-    'Summarize the biggest risks and revenue drivers in Apple’s latest 10-K.',
-    'Compare Microsoft and NVIDIA operating margin trends across recent filings.',
-    'What did Amazon say about customer concentration and liquidity in its annual report?',
-  ]
   const latestAssistantIndex = (() => {
     for (let index = messages.length - 1; index >= 0; index -= 1) {
       if (messages[index].role === 'assistant') {
@@ -229,12 +244,13 @@ export function MessageList({
                   {message.citations.length === 0 ? (
                     <p className="text-xs text-slate-500">No source citations were attached to this response.</p>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="pane-scrollbar max-h-72 space-y-2 overflow-y-auto pr-1">
                       {message.citations.map((citation, citationIndex) => {
                         const citationId = `${message.id}:${citation.chunk_id}`
                         const isSelected = selectedCitationId === citationId
                         const sourceName = citation.company_name || citation.ticker || 'Source'
-                        const filingBits = [citation.filing_type || null, citation.filing_year ? String(citation.filing_year) : null]
+                        const documentYear = citation.filing_year ? String(citation.filing_year) : 'Year n/a'
+                        const filingBits = [citation.filing_type || null]
                           .filter(Boolean)
                           .join(' ')
                         const pageLabel = citation.page_number ? `Page ${citation.page_number}` : 'Page n/a'
@@ -253,7 +269,7 @@ export function MessageList({
                           >
                             <div className="flex items-center justify-between">
                               <p className={`text-xs font-semibold ${isSelected ? 'text-white' : 'text-slate-800'}`}>
-                                [{citationIndex + 1}] {sourceName}
+                                [{citationIndex + 1}] {sourceName} · {documentYear}
                               </p>
                               <p className={`text-[11px] ${isSelected ? 'text-slate-200' : 'text-slate-500'}`}>{pageLabel}</p>
                             </div>
@@ -268,40 +284,6 @@ export function MessageList({
                       })}
                     </div>
                   )}
-                </section>
-              ) : null}
-
-              {message.role === 'assistant' && message.citations.length > 0 ? (
-                <section className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-xs font-semibold tracking-wide text-slate-700 uppercase">Source Chunks</p>
-                    <button
-                      type="button"
-                      onClick={() => onOpenCitationsForMessage(message.id)}
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-medium text-slate-700 hover:bg-slate-50"
-                    >
-                      Open In Source Explorer
-                    </button>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {message.citations.map((citation, citationIndex) => {
-                      const chunkLabel = `Chunk ${citationIndex + 1}`
-                      const pageLabel = citation.page_number ? `p.${citation.page_number}` : 'page n/a'
-                      const title = citation.company_name || citation.ticker || 'Source'
-                      return (
-                        <button
-                          key={`${message.id}:chunk-list:${citation.chunk_id}`}
-                          type="button"
-                          onClick={() => onOpenCitationChunk({ messageId: message.id, chunkId: citation.chunk_id })}
-                          className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-slate-50 px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
-                          title={`${title} ${pageLabel}`}
-                        >
-                          <span className="font-medium text-slate-800">{chunkLabel}</span>
-                          <span className="text-slate-500">{pageLabel}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
                 </section>
               ) : null}
 

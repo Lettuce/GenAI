@@ -52,7 +52,7 @@ def test_hybrid_retriever_orchestrates_rrf_pipeline(monkeypatch) -> None:
         assert len(semantic_candidates) == 1
         assert len(lexical_candidates) == 1
         assert rrf_k == 60
-        assert limit == 8
+        assert limit is None
         return [
             FusedChunkCandidate(
                 chunk_id=chunk_id,
@@ -341,7 +341,7 @@ def test_hybrid_retriever_falls_back_to_lexical_when_embedding_fails(monkeypatch
         assert semantic_candidates == []
         assert lexical_candidates == []
         assert rrf_k == 60
-        assert limit == 8
+        assert limit is None
         return []
 
     def _fake_build_passages(db_session: object, fused_candidates: list[FusedChunkCandidate], *, neighbor_window: int) -> list[RetrievedPassage]:

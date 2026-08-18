@@ -23,6 +23,14 @@ class _FakeSession:
         for item in items:
             self.add(item)
 
+    def execute(self, statement: object) -> object:
+        class _Result:
+            @staticmethod
+            def scalar_one_or_none() -> None:
+                return None
+
+        return _Result()
+
     def flush(self) -> None:
         for message in self.added_messages:
             if message.id is None:

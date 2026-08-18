@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 from sqlalchemy import create_engine, func, select, update
@@ -34,6 +35,15 @@ def _resolve_file_path(local_path: str) -> Path:
     return DATA_DIR / Path(local_path.replace("\\", "/"))
 
 
+def _manifest_filing_date(value: object) -> date | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
 def ingest_manifest(manifest_path: Path = MANIFEST_PATH, database_url: str | None = None) -> list[IngestionResult]:
     manifest = _load_manifest(manifest_path)
     engine = create_engine(database_url or settings.database_url)
@@ -56,6 +66,7 @@ def ingest_manifest(manifest_path: Path = MANIFEST_PATH, database_url: str | Non
             embeddings = embed_texts(embeddings_input, client)
 
             accession_number = filing.get("accession_number")
+            filing_date = chunked_document.filing_date or _manifest_filing_date(filing.get("filing_date"))
             stmt = select(SourceDocument).where(SourceDocument.accession_number == accession_number)
             document = session.scalar(stmt)
 
@@ -64,9 +75,9 @@ def ingest_manifest(manifest_path: Path = MANIFEST_PATH, database_url: str | Non
                     ticker=filing.get("ticker"),
                     company_name=None,
                     filing_type=filing.get("form"),
-                    filing_year=(chunked_document.filing_date.year if chunked_document.filing_date else None),
+                    filing_year=filing_date.year if filing_date else None,
                     accession_number=accession_number,
-                    filing_date=chunked_document.filing_date,
+                    filing_date=filing_date,
                     source_url=filing.get("source_url"),
                     full_markdown_content=chunked_document.markdown_text,
                 )
@@ -75,8 +86,8 @@ def ingest_manifest(manifest_path: Path = MANIFEST_PATH, database_url: str | Non
             else:
                 document.ticker = filing.get("ticker")
                 document.filing_type = filing.get("form")
-                document.filing_year = chunked_document.filing_date.year if chunked_document.filing_date else None
-                document.filing_date = chunked_document.filing_date
+                document.filing_year = filing_date.year if filing_date else None
+                document.filing_date = filing_date
                 document.source_url = filing.get("source_url")
                 document.full_markdown_content = chunked_document.markdown_text
                 session.add(document)
@@ -96,16 +107,12 @@ def ingest_manifest(manifest_path: Path = MANIFEST_PATH, database_url: str | Non
                 )
 
             session.commit()
-            try:
-                session.execute(
-                    update(DocumentChunk)
-                    .where(DocumentChunk.source_document_id == document.id)
-                    .values(search_vector=func.to_tsvector("english", func.left(DocumentChunk.content, 8000)))
-                )
-                session.commit()
-            except Exception:
-                # Keep chunk ingestion usable even when database FTS index limits reject large vectors.
-                session.rollback()
+            session.execute(
+                update(DocumentChunk)
+                .where(DocumentChunk.source_document_id == document.id)
+                .values(search_vector=func.to_tsvector("english", func.left(DocumentChunk.content, 8000)))
+            )
+            session.commit()
             results.append(IngestionResult(source_document_id=str(document.id), chunk_count=len(chunked_document.hybrid_chunks)))
 
     return results

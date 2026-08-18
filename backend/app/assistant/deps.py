@@ -12,6 +12,5 @@ class AssistantRuntimeDeps:
     thread_id: uuid.UUID
     retriever: RetrieverProtocol
     filters: RetrievalFilters | None = None
-    citation_limit: int = 8
     retrieval_query: str | None = None
     retrieved_passages: list[object] = field(default_factory=list)

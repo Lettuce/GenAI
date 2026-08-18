@@ -33,7 +33,7 @@ def main() -> None:
     report_path = Path(__file__).resolve().parents[2] / "docs" / "phase-5-relevance-report.md"
 
     with SessionLocal() as db:
-        retriever = HybridRetriever(db, final_limit=5, semantic_limit=40, lexical_limit=40, rrf_k=60, neighbor_window=1)
+        retriever = HybridRetriever(db, semantic_limit=40, lexical_limit=40, rrf_k=60, neighbor_window=1)
         fallback_mode = False
 
         lines: list[str] = []
@@ -44,7 +44,7 @@ def main() -> None:
         lines.append("Configuration:")
         lines.append("- semantic_limit=40")
         lines.append("- lexical_limit=40")
-        lines.append("- final_limit=5")
+        lines.append("- final_limit=unlimited (all fused candidates from the configured search windows)")
         lines.append("- rrf_k=60")
         lines.append("- neighbor_window=1")
         lines.append("")
@@ -56,7 +56,6 @@ def main() -> None:
                 if not fallback_mode:
                     retriever = HybridRetriever(
                         db,
-                        final_limit=5,
                         semantic_limit=0,
                         lexical_limit=40,
                         rrf_k=60,

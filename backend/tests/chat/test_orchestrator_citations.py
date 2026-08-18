@@ -6,6 +6,7 @@ from app.assistant.outputs import Citation, GroundedAnswer, SourcePassage
 from app.chat.orchestrator import (
     _citation_writes,
     _citations_for_persistence,
+    _format_sectioned_answer,
     _recover_answer_with_retrieved_citations,
     _select_relevant_passages,
 )
@@ -142,6 +143,46 @@ def test_recover_answer_with_retrieved_citations_prefers_relevant_company_for_si
 
     assert len(recovered.citations) == 1
     assert recovered.citations[0].chunk_id == nvidia_chunk
+
+
+def test_recovery_and_searching_include_all_retrieved_sources() -> None:
+    passages = [
+        _source_passage(
+            chunk_id=str(uuid.uuid4()),
+            document_id=f'doc-{index}',
+            content=f'Microsoft operating margin evidence {index}.',
+            ticker='MSFT',
+            company_name='Microsoft',
+        )
+        for index in range(5)
+    ]
+    answer = GroundedAnswer(
+        answer_text='Microsoft summary.',
+        citations=[
+            Citation(
+                chunk_id=passages[0].chunk_id,
+                document_id=passages[0].document_id,
+            )
+        ],
+        insufficient_evidence=False,
+    )
+
+    recovered = _recover_answer_with_retrieved_citations(
+        answer=answer,
+        user_text='Summarize Microsoft operating margin',
+        retrieved_passages=passages,
+    )
+    formatted = _format_sectioned_answer(
+        user_text='Summarize Microsoft operating margin',
+        answer=recovered,
+        retrieved_passages=passages,
+    )
+
+    assert len(recovered.citations) == len(passages)
+    assert formatted.count('Microsoft - 10-K 2024') == 1
+    assert '(5 passages)' in formatted
+    assert formatted.count('Microsoft, p. 7:') == len(passages)
+    assert f'Verified against {len(passages)} citation(s)' in formatted
 
 
 def test_citation_writes_skips_invalid_ids_but_keeps_valid_rows() -> None:

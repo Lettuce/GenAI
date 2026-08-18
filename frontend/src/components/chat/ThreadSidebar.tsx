@@ -137,7 +137,7 @@ export function ThreadSidebar({
           disabled={creating}
           className="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
         >
-          {creating ? 'Creating…' : 'New Thread'}
+          {creating ? 'Creating…' : 'New Chat'}
         </button>
       </div>
 

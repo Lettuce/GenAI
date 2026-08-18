@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import type { UIMessage } from 'ai'
 import { useChat } from '@ai-sdk/react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { MessageComposer } from '../../components/chat/MessageComposer'
-import { CitationDetailPanel } from '../../components/chat/CitationDetailPanel'
 import type { DisplayCitation } from '../../components/chat/MessageList'
 import type { DisplayMessage } from '../../components/chat/MessageList'
 import { MessageList } from '../../components/chat/MessageList'
@@ -19,6 +18,10 @@ import {
   updateThreadTitle,
   type ChatThread,
 } from '../../lib/api'
+
+const CitationDetailPanel = lazy(() =>
+  import('../../components/chat/CitationDetailPanel').then((module) => ({ default: module.CitationDetailPanel })),
+)
 
 function tokenize(text: string): Set<string> {
   const tokens = text
@@ -198,14 +201,24 @@ export function ChatPage() {
       })
   }, [citationsByMessageId, uiMessages])
 
-  const citationsForSelectedMessage = useMemo(() => {
+  const selectedCitationForDisplay = useMemo(() => {
     if (!selectedCitation) {
-      return []
+      return null
     }
 
     const message = displayMessages.find((item) => item.id === selectedCitation.messageId)
-    return message?.citations ?? []
+    const citation = message?.citations.find((item) => item.chunk_id === selectedCitation.citation.chunk_id)
+    return message && citation ? { messageId: message.id, citation } : null
   }, [displayMessages, selectedCitation])
+
+  const citationsForSelectedMessage = useMemo(() => {
+    if (!selectedCitationForDisplay) {
+      return []
+    }
+
+    const message = displayMessages.find((item) => item.id === selectedCitationForDisplay.messageId)
+    return message?.citations ?? []
+  }, [displayMessages, selectedCitationForDisplay])
 
   const isStreaming = status === 'submitted' || status === 'streaming'
   const isBlankReadyState = !hasActiveThread && uiMessages.length === 0 && status === 'ready' && !loadingMessages && !loadingThreads
@@ -295,20 +308,6 @@ export function ChatPage() {
       mounted = false
     }
   }, [loadMessages, navigate, params.threadId, refreshThreads])
-
-  useEffect(() => {
-    if (!selectedCitation) {
-      return
-    }
-
-    const stillExists = displayMessages.some((message) =>
-      message.id === selectedCitation.messageId && message.citations.some((citation) => citation.chunk_id === selectedCitation.citation.chunk_id),
-    )
-
-    if (!stillExists) {
-      setSelectedCitation(null)
-    }
-  }, [displayMessages, selectedCitation])
 
   async function handleCreateThread() {
     setCreatingThread(true)
@@ -420,19 +419,6 @@ export function ChatPage() {
     setSelectedCitation({ messageId: message.id, citation: bestCitation })
   }
 
-  function handleOpenCitationChunk(params: { messageId: string; chunkId: string }) {
-    setError(null)
-    const message = displayMessages.find((item) => item.id === params.messageId && item.role === 'assistant')
-    const citation = message?.citations.find((item) => item.chunk_id === params.chunkId)
-
-    if (!message || !citation) {
-      setError('The selected source chunk is no longer available.')
-      return
-    }
-
-    setSelectedCitation({ messageId: message.id, citation })
-  }
-
   async function handleDeleteThread(threadId: string) {
     setError(null)
     try {
@@ -516,15 +502,15 @@ export function ChatPage() {
             <div className="flex h-full items-center justify-center text-sm text-slate-500">Loading messages…</div>
           ) : (
             <MessageList
+              key={activeThreadId ?? 'new-chat'}
               messages={displayMessages}
               isStreaming={isStreaming}
               progressStage={progressStage}
               progressPercent={progressPercent}
-              selectedCitationId={selectedCitation ? `${selectedCitation.messageId}:${selectedCitation.citation.chunk_id}` : null}
+              selectedCitationId={selectedCitationForDisplay ? `${selectedCitationForDisplay.messageId}:${selectedCitationForDisplay.citation.chunk_id}` : null}
               onCitationSelect={setSelectedCitation}
               onRetryAssistantMessage={(messageId) => void handleRetryAssistantMessage(messageId)}
               onOpenCitationsForMessage={handleOpenCitationsForMessage}
-              onOpenCitationChunk={handleOpenCitationChunk}
               onSuggestedPrompt={(prompt) => handleSuggestedPrompt(prompt)}
             />
           )}
@@ -533,7 +519,15 @@ export function ChatPage() {
         <MessageComposer disabled={isStreaming} onSubmit={handleSubmitMessage} />
       </section>
 
-      <CitationDetailPanel selection={selectedCitation} citationsForMessage={citationsForSelectedMessage} />
+      <Suspense
+        fallback={
+          <aside className="hidden w-[24rem] shrink-0 border-l border-slate-200 bg-white p-4 md:flex md:flex-col">
+            <p className="text-sm text-slate-500">Loading source explorer…</p>
+          </aside>
+        }
+      >
+        <CitationDetailPanel selection={selectedCitationForDisplay} citationsForMessage={citationsForSelectedMessage} />
+      </Suspense>
     </main>
   )
 }

@@ -11,7 +11,6 @@ class GroundingValidationError(ValueError):
 
 @dataclass(frozen=True)
 class GroundingValidator:
-    max_citations: int = 24
     model_name: str | None = None
 
     async def validate(self, *, answer: GroundedAnswer, retrieved_passages: list[SourcePassage]) -> GroundedAnswer:
@@ -31,9 +30,6 @@ class GroundingValidator:
 
         if not answer.citations:
             raise GroundingValidationError("At least one citation is required for factual answers.")
-
-        if len(answer.citations) > self.max_citations:
-            raise GroundingValidationError(f"Citation count exceeds max_citations={self.max_citations}.")
 
         allowed_by_chunk = {passage.chunk_id: passage for passage in retrieved_passages}
         if not allowed_by_chunk:

@@ -22,7 +22,7 @@ class HybridRetriever:
         embedding_fn: Callable[[str, OpenAI], list[float]] | None = None,
         semantic_limit: int = 30,
         lexical_limit: int = 30,
-        final_limit: int = settings.retrieval_top_k,
+        final_limit: int | None = None,
         rrf_k: int = settings.rf_60,
         neighbor_window: int = 1,
     ) -> None:
@@ -36,15 +36,15 @@ class HybridRetriever:
         self._neighbor_window = neighbor_window
 
     @staticmethod
-    def _diversify_passages(passages: list[RetrievedPassage], *, filters: RetrievalFilters | None, limit: int) -> list[RetrievedPassage]:
-        if not passages or limit <= 0:
+    def _diversify_passages(passages: list[RetrievedPassage], *, filters: RetrievalFilters | None, limit: int | None) -> list[RetrievedPassage]:
+        if not passages or limit == 0:
             return []
         if filters is None or not filters.tickers:
-            return passages[:limit]
+            return passages if limit is None else passages[:limit]
 
         requested_tickers = [ticker.strip().upper() for ticker in filters.tickers if ticker and ticker.strip()]
         if len(requested_tickers) <= 1:
-            return passages[:limit]
+            return passages if limit is None else passages[:limit]
 
         ranked_by_ticker: dict[str, list[RetrievedPassage]] = {ticker: [] for ticker in requested_tickers}
         remaining: list[RetrievedPassage] = []
@@ -59,7 +59,7 @@ class HybridRetriever:
 
         selected: list[RetrievedPassage] = []
         active_tickers = [ticker for ticker in requested_tickers if ranked_by_ticker.get(ticker)]
-        while len(selected) < limit and active_tickers:
+        while (limit is None or len(selected) < limit) and active_tickers:
             for ticker in active_tickers:
                 bucket = ranked_by_ticker.get(ticker, [])
                 if not bucket:
@@ -69,21 +69,21 @@ class HybridRetriever:
                     continue
                 selected.append(passage)
                 seen_ids.add(passage.chunk_id)
-                if len(selected) >= limit:
+                if limit is not None and len(selected) >= limit:
                     break
             if not any(bucket for bucket in ranked_by_ticker.values()):
                 break
 
-        if len(selected) < limit:
+        if limit is None or len(selected) < limit:
             for passage in passages:
                 if passage.chunk_id in seen_ids:
                     continue
                 selected.append(passage)
                 seen_ids.add(passage.chunk_id)
-                if len(selected) >= limit:
+                if limit is not None and len(selected) >= limit:
                     break
 
-        return selected[:limit]
+        return selected if limit is None else selected[:limit]
 
     def retrieve(self, query: str, *, filters: RetrievalFilters | None = None) -> list[RetrievedPassage]:
         semantic_candidates = []
@@ -108,7 +108,7 @@ class HybridRetriever:
         )
 
         candidate_limit = self._final_limit
-        if filters is not None and filters.tickers and len(filters.tickers) > 1:
+        if candidate_limit is not None and filters is not None and filters.tickers and len(filters.tickers) > 1:
             candidate_limit = max(self._final_limit * 4, self._final_limit + 8)
 
         fused_candidates = fuse_ranked_candidates(
